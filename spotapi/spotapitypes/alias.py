@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing_extensions import TypeAlias, Self
-from typing import Final, final, Any
+from typing import Any, Final
 
+from typing_extensions import Self, TypeAlias, final
 
 __all__ = ["_UndefinedType", "_Undefined", "_UStr"]
 
 
 @final
 class _UndefinedType:
+    """Sentinel type used to represent an undefined or missing value."""
+
     def __copy__(self) -> Self:
         return self
 
@@ -26,4 +28,5 @@ class _UndefinedType:
 
 
 _Undefined: Final[Any] = _UndefinedType()
+
 _UStr: TypeAlias = str | _UndefinedType

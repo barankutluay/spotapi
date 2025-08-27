@@ -2,19 +2,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Union
+
 from requests import Response as StdResponse
 from tls_client.response import Response as TLSResponse
 
 __all__ = ["Response", "Error", "StdResponse", "TLSResponse"]
 
+
 # Dataclass needs to be here to avoid circular imports
 @dataclass
 class Response:
+    """
+    Unified response wrapper for both TLSClient and Requests.
+    """
+
     raw: TLSResponse | StdResponse
     status_code: int
     response: Any
 
-    error: Error = field(init=False)
+    error: "Error" = field(init=False)
     success: bool = field(init=False)
     fail: bool = field(init=False)
 
@@ -30,6 +36,10 @@ class Response:
 
 @dataclass
 class Error:
+    """
+    Error wrapper for HTTP responses.
+    """
+
     status_code: int
     response: Union[str, dict]
     string: str

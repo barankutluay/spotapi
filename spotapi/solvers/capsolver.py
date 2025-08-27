@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Literal, Dict, Any
+from typing import Any, Dict, Literal
 
 from spotapi.exceptions import CaptchaException, SolverError
 from spotapi.http.request import StdClient
@@ -15,22 +15,18 @@ class Capsolver:
 
     Parameters
     ----------
-    api_key: str
+    api_key : str
         Your capsolver API key.
-    client: StdClient
+    client : StdClient
         The http client to use.
-    retries: int
+    retries : int
         The number of retries to attempt.
-    proxy: str | None
-        The HTTP proxy to use. Must in format of "username:password@host:port".
+    proxy : str | None
+        The HTTP proxy to use. Must be in the format "username:password@host:port".
     """
 
-    __slots__ = (
-        "api_key",
-        "client",
-        "proxy",
-        "retries",
-    )
+    __slots__ = ("api_key", "client", "proxy", "retries")
+
     BaseURL = "https://api.capsolver.com/"
 
     def __init__(
@@ -45,13 +41,10 @@ class Capsolver:
         self.client = client
         self.proxy = proxy
         self.retries = retries
-
         self.client.authenticate = lambda kwargs: self._auth_rule(kwargs)
 
     def _auth_rule(self, kwargs: dict) -> dict:
-        if "json" not in kwargs:
-            kwargs["json"] = {}
-
+        kwargs.setdefault("json", {})
         kwargs["json"]["clientKey"] = self.api_key
         return kwargs
 
@@ -65,7 +58,6 @@ class Capsolver:
             )
 
         resp = request.response
-
         if int(resp["errorId"]) != 0:
             raise CaptchaException(
                 "Could not retrieve balance.", error=resp["errorDescription"]
@@ -87,18 +79,18 @@ class Capsolver:
             if proxy
             else "ReCaptcha{}EnterpriseTaskProxyLess"
         ).format(task.upper())
+
         payload: Dict[str, Dict[str, Any]] = {
             "task": {
                 "type": task_type,
                 "websiteURL": url,
                 "websiteKey": site_key,
                 "pageAction": action,
-            },
+            }
         }
 
         if task == "v2":
             payload["task"]["isInvisible"] = True
-
         if proxy:
             payload["task"]["proxy"] = proxy
 
@@ -108,7 +100,6 @@ class Capsolver:
             raise CaptchaException("Could not create task.", error=request.error.string)
 
         resp = request.response
-
         if int(resp["errorId"]) != 0:
             raise CaptchaException(
                 "Could not create task.", error=resp["errorDescription"]
@@ -117,19 +108,18 @@ class Capsolver:
         return str(resp["taskId"])
 
     def _harvest_task(self, task_id: str, retries: int) -> str:
+        endpoint = self.BaseURL + "getTaskResult"
         for _ in range(retries):
-            payload = {"taskId": task_id}
-            endpoint = self.BaseURL + "getTaskResult"
-
-            request = self.client.post(endpoint, authenticate=True, json=payload)
+            request = self.client.post(
+                endpoint, authenticate=True, json={"taskId": task_id}
+            )
 
             if request.fail:
                 raise CaptchaException(
-                    "Could not get task result", error=request.error.string
+                    "Could not get task result.", error=request.error.string
                 )
 
             resp = request.response
-
             if int(resp["errorId"]) != 0:
                 raise CaptchaException(
                     "Could not get task result.", error=resp["errorDescription"]
@@ -139,7 +129,6 @@ class Capsolver:
                 return str(resp["solution"]["gRecaptchaResponse"])
 
             time.sleep(1)
-            continue
 
         raise SolverError("Failed to solve captcha.", error="Max retries reached")
 

@@ -1,10 +1,11 @@
-import threading
 import functools
+import threading
+from typing import Any, Callable, Dict, List, Optional, ParamSpec, TypeVar
+
 from spotapi.login import Login
-from spotapi.types.annotations import enforce
-from spotapi.types.data import PlayerState, Devices, Track
+from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapitypes.data import Devices, PlayerState, Track
 from spotapi.websocket import WebsocketStreamer
-from typing import Dict, Any, Callable, List, ParamSpec, TypeVar
 
 __all__ = [
     "PlayerStatus",
@@ -22,37 +23,43 @@ P = ParamSpec("P")
 @enforce
 class PlayerStatus(WebsocketStreamer):
     """
-    A class used to represent the current state of the player.
+    Represents the current state of the Spotify player.
 
-    Parameters
-    ----------
-    login : Login
-        The login instance used for authentication.
-    s_device_id : Optional[str], optional
-        The device ID to use for the player. If None, a new device ID will be generated.
+    Args:
+        login (Login): The login instance for authentication.
+        s_device_id (Optional[str]): Optional device ID to use. If None, a new device ID is generated.
     """
 
-    _device_dump: Dict[str, Any] | None = None
-    _state: Dict[str, Any] | None = None
-    _devices: Dict[str, Any] | None = None
+    _device_dump: Optional[Dict[str, Any]] = None
+    _state: Optional[Dict[str, Any]] = None
+    _devices: Optional[Dict[str, Any]] = None
 
-    def __init__(self, login: Login, s_device_id: str | None = None) -> None:
+    def __init__(self, login: Login, s_device_id: Optional[str] = None) -> None:
         super().__init__(login)
-
         if s_device_id:
             self.device_id = s_device_id
 
-        # Register current device with Spotify
         self.register_device()
 
     def renew_state(self) -> None:
+        """
+        Refresh the player state and device information.
+        """
         self._device_dump = self.connect_device()
         self._state = self._device_dump["player_state"]
         self._devices = self._device_dump["devices"]
 
     @functools.cached_property
     def saved_state(self) -> PlayerState:
-        """Gets the last saved state of the player."""
+        """
+        Returns the last saved player state.
+
+        Returns:
+            PlayerState: Last saved player state.
+
+        Raises:
+            ValueError: If player state cannot be obtained.
+        """
         if self._state is None:
             self.renew_state()
 
@@ -63,34 +70,50 @@ class PlayerStatus(WebsocketStreamer):
 
     @property
     def state(self) -> PlayerState:
-        """Gets the current state of the player."""
-        self.renew_state()
+        """
+        Returns the current player state.
 
+        Returns:
+            PlayerState: Current player state.
+
+        Raises:
+            ValueError: If player state cannot be obtained.
+        """
+        self.renew_state()
         if self._state is None:
             raise ValueError("Could not get player state")
-
         return PlayerState.from_dict(self._state)
 
     @functools.cached_property
     def saved_device_ids(self) -> Devices:
-        """Gets the last saved device IDs of the player."""
+        """
+        Returns the last saved device IDs.
+
+        Returns:
+            Devices: Last saved device information.
+
+        Raises:
+            ValueError: If devices cannot be obtained.
+        """
         if self._devices is None:
             self.renew_state()
 
-        if self._devices is None:
-            raise ValueError("Could not get devices")
-
-        if (
-            self._device_dump is None
-            or self._device_dump.get("active_device_id") is None
-        ):
-            raise ValueError("Could not get active device ID")
+        if self._devices is None or self._device_dump is None:
+            raise ValueError("Could not get devices or active device ID")
 
         return Devices.from_dict(self._devices, self._device_dump["active_device_id"])
 
     @property
     def device_ids(self) -> Devices:
-        """Gets the current device IDs of the player."""
+        """
+        Returns the current device IDs.
+
+        Returns:
+            Devices: Current devices.
+
+        Raises:
+            ValueError: If devices cannot be obtained.
+        """
         self.renew_state()
 
         if self._devices is None:
@@ -107,7 +130,15 @@ class PlayerStatus(WebsocketStreamer):
 
     @property
     def active_device_id(self) -> str:
-        """Gets the active device ID of the player."""
+        """
+        Returns the active device ID.
+
+        Returns:
+            str: Active device ID.
+
+        Raises:
+            ValueError: If active device ID cannot be obtained.
+        """
         self.renew_state()
 
         if (
@@ -119,61 +150,63 @@ class PlayerStatus(WebsocketStreamer):
         return self._device_dump["active_device_id"]
 
     @property
-    def next_song_in_queue(self) -> Track | None:
-        """Gets the next song in the queue."""
+    def next_song_in_queue(self) -> Optional[Track]:
+        """
+        Returns the next track in the playback queue.
+
+        Returns:
+            Optional[Track]: Next track, or None if queue is empty.
+        """
         state = self.state
-
-        if len(state.next_tracks) <= 0:
-            return None
-
-        return state.next_tracks[0]
+        return state.next_tracks[0] if state.next_tracks else None
 
     @property
     def next_songs_in_queue(self) -> List[Track]:
-        """Gets the next songs in the queue."""
-        state = self.state
-        return state.next_tracks
+        """
+        Returns the upcoming tracks in the playback queue.
+
+        Returns:
+            List[Track]: Upcoming tracks.
+        """
+        return self.state.next_tracks
 
     @property
-    def last_played(self) -> Track | None:
-        """Gets the last played track."""
+    def last_played(self) -> Optional[Track]:
+        """
+        Returns the last played track.
+
+        Returns:
+            Optional[Track]: Last played track, or None if no history.
+        """
         state = self.state
-
-        if len(state.prev_tracks) <= 0:
-            return None
-
-        return state.prev_tracks[-1]
+        return state.prev_tracks[-1] if state.prev_tracks else None
 
     @property
     def last_songs_played(self) -> List[Track]:
-        """Gets the last played songs."""
-        state = self.state
-        return state.prev_tracks
+        """
+        Returns all previously played tracks.
+
+        Returns:
+            List[Track]: Previously played tracks.
+        """
+        return self.state.prev_tracks
 
 
 @enforce
 class EventManager(PlayerStatus):
     """
-    An event manager for the Spotify state updates.
+    Manages events and subscriptions for the Spotify player.
 
-    Parameters
-    ----------
-    login : Login
-        The login instance used for authentication.
-    s_device_id : Optional[str], optional
-        The device ID to use for the player. If None, a new device ID will be generated.
+    Args:
+        login (Login): The login instance for authentication.
+        s_device_id (Optional[str]): Optional device ID to use. If None, a new device ID is generated.
     """
 
-    __slots__ = (
-        "_current_state",
-        "wlock",
-        "_subscriptions",
-        "listener",
-    )
+    __slots__ = ("_current_state", "wlock", "_subscriptions", "listener")
 
-    def __init__(self, login: Login, s_device_id: str | None = None) -> None:
+    def __init__(self, login: Login, s_device_id: Optional[str] = None) -> None:
         super().__init__(login, s_device_id)
-        self._current_state = self.state  # Need this to activate websocket
+        self._current_state = self.state  # Initialize state for websocket
 
         self.wlock = threading.Lock()
         self._subscriptions: Dict[str, List[Callable[..., Any]]] = {}
@@ -182,6 +215,7 @@ class EventManager(PlayerStatus):
         self.listener.start()
 
     def _subscribe_callable(self, event: str, func: Callable[..., Any]) -> None:
+        """Register a callable for a specific event."""
         with self.wlock:
             if event not in self._subscriptions:
                 self._subscriptions[event] = []
@@ -196,13 +230,18 @@ class EventManager(PlayerStatus):
     def subscribe(self, event: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
         """
         Decorator to subscribe a function to a Spotify websocket event.
+
+        Args:
+            event (str): The event name to subscribe to.
+
+        Returns:
+            Callable: Decorator that registers the function for the event.
         """
 
         def decorator(func: Callable[P, R]) -> Callable[P, R]:
             @functools.wraps(func)
             def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
-                result = func(*args, **kwargs)
-                return result
+                return func(*args, **kwargs)
 
             self._subscribe_callable(event, wrapped)
             return wrapped
@@ -211,20 +250,31 @@ class EventManager(PlayerStatus):
 
     def _emit(self, event: str, *args: Any, **kwargs: Any) -> None:
         """
-        Emit an event, triggering all subscribed functions.
-        Should only be called from the WebsocketStreamer thread.
+        Emit an event and call all subscribed functions.
+
+        Args:
+            event (str): Event name.
+            *args: Positional arguments to pass to subscribers.
+            **kwargs: Keyword arguments to pass to subscribers.
         """
         if event in self._subscriptions:
             for func in self._subscriptions[event]:
                 func(*args, **kwargs)
 
     def unsubscribe(self, event: str, func: Callable[..., Any]) -> None:
-        """Unsubscribe a function from an event."""
+        """
+        Unsubscribe a function from an event.
+
+        Args:
+            event (str): Event name.
+            func (Callable): Function to remove.
+        """
         with self.wlock:
             if event in self._subscriptions:
                 self._subscriptions[event].remove(func)
 
     def _listen(self) -> None:
+        """Background thread to listen for websocket events and emit them."""
         while True:
             event = self.get_packet()
             if event is None or event.get("payloads") is None:

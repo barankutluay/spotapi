@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Type, Dict
-from tls_client.settings import ClientIdentifiers
-from tls_client.exceptions import TLSClientExeption
-from tls_client.response import Response as TLSResponse
-from spotapi.exceptions import ParentException, RequestError
-from spotapi.http.data import Response
-from tls_client import Session
-import requests
 import atexit
 import json
+from typing import Any, Callable, Dict, Type
+
+import requests
+from tls_client import Session
+from tls_client.exceptions import TLSClientExeption
+from tls_client.response import Response as TLSResponse
+from tls_client.settings import ClientIdentifiers
+
+from spotapi.exceptions import ParentException, RequestError
+from spotapi.http.data import Response
 
 __all__ = [
     "StdClient",
-    "ClientIdentifiers",
     "TLSClient",
+    "ClientIdentifiers",
     "ParentException",
     "RequestError",
     "Response",
@@ -23,14 +25,10 @@ __all__ = [
 
 class StdClient:
     """
-    Standard HTTP Client implementation wrapped around the requests library.
+    Standard HTTP client wrapped around the requests library.
     """
 
-    __slots__ = (
-        "_client",
-        "auto_retries",
-        "authenticate",
-    )
+    __slots__ = ("_client", "auto_retries", "authenticate")
 
     def __init__(
         self,
@@ -58,18 +56,16 @@ class StdClient:
         err = "Unknown"
         for _ in range(self.auto_retries):
             try:
-                response = self._client.request(method.upper(), url, **kwargs)
+                return self._client.request(method.upper(), url, **kwargs)
             except Exception as e:
                 err = str(e)
                 continue
-            else:
-                return response
 
         raise RequestError("Failed to complete request.", error=err)
 
     def parse_response(self, response: requests.Response) -> Response:
         body: str | Dict[Any, Any] | None = response.text
-        headers = {key.lower(): value for key, value in response.headers.items()}
+        headers = {k.lower(): v for k, v in response.headers.items()}
 
         if "application/json" in headers.get("content-type", ""):
             try:
@@ -86,11 +82,10 @@ class StdClient:
             kwargs = self.authenticate(kwargs)
 
         response = self.build_request(method, url, **kwargs)
-
-        if response is not None:
-            return self.parse_response(response)
-        else:
+        if response is None:
             raise RequestError("Request kept failing after retries.")
+
+        return self.parse_response(response)
 
     def post(
         self, url: str | bytes, *, authenticate: bool = False, **kwargs
@@ -110,9 +105,8 @@ class StdClient:
 
 class TLSClient(Session):
     """
-    TLS-HTTP Client implementation wrapped around the tls_client library.
-
-    This is fully undetected by Spotify.com.
+    TLS HTTP client wrapped around the tls_client library.
+    Fully undetected by Spotify.com.
     """
 
     def __init__(
@@ -149,12 +143,10 @@ class TLSClient(Session):
         err = "Unknown"
         for _ in range(self.auto_retries):
             try:
-                response = self.execute_request(method.upper(), url, **kwargs)
+                return self.execute_request(method.upper(), url, **kwargs)
             except TLSClientExeption as e:
                 err = str(e)
                 continue
-            else:
-                return response
 
         raise RequestError("Failed to complete request.", error=err)
 
@@ -162,25 +154,23 @@ class TLSClient(Session):
         self, response: TLSResponse, method: str, danger: bool
     ) -> Response:
         body: str | Dict[Any, Any] | None = response.text
-        headers = {key.lower(): value for key, value in response.headers.items()}
+        headers = {k.lower(): v for k, v in response.headers.items()}
 
-        # Spotify doesn't set content-type for some reason?
         json_encoded = "application/json" in headers.get("content-type", "")
-        is_Dict = True
+        is_dict = True
 
         try:
             json.loads(body)  # type: ignore
         except json.JSONDecodeError:
-            is_Dict = False
+            is_dict = False
 
-        if json_encoded or is_Dict:
+        if json_encoded or is_dict:
             json_formatted = response.json()
             body = json_formatted if isinstance(json_formatted, Dict) else body
 
         if not body:
             body = None
 
-        # Why is status_code a None type...
         assert response.status_code is not None, "Status Code is None"
 
         resp = Response(
@@ -189,7 +179,8 @@ class TLSClient(Session):
 
         if danger and self.fail_exception and resp.fail:
             raise self.fail_exception(
-                f"Could not {method} {str(response.url).split('?')[0]}. Status Code: {resp.status_code}",
+                f"Could not {method} {str(response.url).split('?')[0]}. "
+                f"Status Code: {resp.status_code}",
                 "Request Failed.",
             )
 
@@ -198,12 +189,10 @@ class TLSClient(Session):
     def get(
         self, url: str | bytes, *, authenticate: bool = False, **kwargs
     ) -> Response:
-        """Routes a GET Request"""
-        if authenticate and self.authenticate is not None:
+        if authenticate and self.authenticate:
             kwargs = self.authenticate(kwargs)
 
         response = self.build_request("GET", url, allow_redirects=True, **kwargs)
-
         if response is None:
             raise TLSClientExeption("Request kept failing after retries.")
 
@@ -217,12 +206,10 @@ class TLSClient(Session):
         danger: bool = False,
         **kwargs,
     ) -> Response:
-        """Routes a POST Request"""
-        if authenticate and self.authenticate is not None:
+        if authenticate and self.authenticate:
             kwargs = self.authenticate(kwargs)
 
         response = self.build_request("POST", url, allow_redirects=True, **kwargs)
-
         if response is None:
             raise TLSClientExeption("Request kept failing after retries.")
 
@@ -236,12 +223,10 @@ class TLSClient(Session):
         danger: bool = False,
         **kwargs,
     ) -> Response:
-        """Routes a PUT Request"""
-        if authenticate and self.authenticate is not None:
+        if authenticate and self.authenticate:
             kwargs = self.authenticate(kwargs)
 
         response = self.build_request("PUT", url, allow_redirects=True, **kwargs)
-
         if response is None:
             raise TLSClientExeption("Request kept failing after retries.")
 

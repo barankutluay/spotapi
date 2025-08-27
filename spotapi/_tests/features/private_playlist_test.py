@@ -1,6 +1,7 @@
 import pytest
-from spotapi import PrivatePlaylist, PlaylistError
 from session import _MainFixture
+
+from spotapi import PlaylistError, PrivatePlaylist
 
 PUBLIC_PLAYLIST_URI = "40GMAhriYJRO1rsY4YdrZb"
 login_instance = _MainFixture.login

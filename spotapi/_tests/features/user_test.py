@@ -1,7 +1,8 @@
 import pytest
+from session import _MainFixture
+
 from spotapi import User
 from spotapi.exceptions import UserError
-from session import _MainFixture
 
 instance = User(login=_MainFixture.login)
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Union
+
 from spotapi.http.request import TLSClient
-from typing import List, Dict, Any, Union
-from spotapi.types.interfaces import CaptchaProtocol, LoggerProtocol
+from spotapi.spotapitypes.interfaces import CaptchaProtocol, LoggerProtocol
 
 __all__ = [
     "Config",

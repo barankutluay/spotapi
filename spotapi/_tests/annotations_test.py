@@ -1,8 +1,9 @@
 # type: ignore
-from spotapi.types.annotations import enforce
+from typing import Dict, Generator, Iterable, List, Mapping, Sequence, Tuple
 
 import pytest
-from typing import List, Dict, Tuple, Sequence, Iterable, Mapping, Generator
+
+from spotapi.spotapitypes.annotations import enforce
 
 
 @enforce

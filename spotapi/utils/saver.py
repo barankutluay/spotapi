@@ -1,173 +1,110 @@
-""" 
-Saver.py contains a few saver implementations using the SaverProtocol interface. 
-These are popular savers that are used for session storing, but if you need a different saver, you can implement it yourself quite easily.
+"""
+Refactored Saver module for session storage.
+Supports JSON, SQLite, MongoDB, and Redis backends.
 """
 
 import atexit
 import json
 import os
 import sqlite3
-from typing import Any, List, Mapping
+from typing import Any, List, Mapping, Optional
 
 import pymongo
 import redis
 from readerwriterlock import rwlock
 
-from spotapi.types.interfaces import SaverProtocol
 from spotapi.exceptions import SaverError
+from spotapi.spotapitypes.interfaces import SaverProtocol
 
 __all__ = ["JSONSaver", "MongoSaver", "RedisSaver", "SqliteSaver", "SaverProtocol"]
 
 
 class JSONSaver(SaverProtocol):
-    """
-    CRUD methods for JSON files
-    """
-
-    __slots__ = (
-        "path",
-        "rwlock",
-        "rlock",
-        "wlock",
-    )
+    __slots__ = ("path", "rwlock", "rlock", "wlock")
 
     def __init__(self, path: str = "sessions.json") -> None:
         self.path = path
-
         self.rwlock = rwlock.RWLockFairD()
         self.rlock = self.rwlock.gen_rlock()
         self.wlock = self.rwlock.gen_wlock()
 
     def __str__(self) -> str:
-        return f"JSONSaver()"
+        return "JSONSaver()"
 
-    def save(self, data: List[Mapping[str, Any]], **kwargs) -> None:
-        """
-        Save data to a JSON file
+    def _read_file(self) -> List[Mapping[str, Any]]:
+        if not os.path.exists(self.path):
+            return []
+        with open(self.path, "r") as f:
+            content = f.read()
+            return json.loads(content) if content.strip() else []
 
-        Kwargs
-        -------
-        overwrite (bool, optional): Defaults to False.
-            Overwrites the entire file instead of appending.
-        """
+    def _write_file(self, data: List[Mapping[str, Any]]) -> None:
+        with open(self.path, "w") as f:
+            json.dump(data, f, indent=4)
+
+    def save(self, data: List[Mapping[str, Any]], overwrite: bool = False) -> None:
+        if not data:
+            raise ValueError("No data to save")
+
         with self.wlock:
-            if len(data) == 0:
-                raise ValueError("No data to save")
-
-            if not os.path.exists(self.path):
-                open(self.path, "w").close()
-
-            if kwargs.get("overwrite", False):
-                current = []
-            else:
-                with open(self.path, "r") as f:
-                    file_content = f.read()
-                    current = json.loads(file_content) if file_content.strip() else []
-                    # Checks if identifier exists
-                    if current:
-                        current = [
-                            item
-                            for item in current
-                            if not any(
-                                item["identifier"] == d["identifier"] for d in data
-                            )
-                        ]
-
+            current = [] if overwrite else self._read_file()
+            # remove duplicates by identifier
+            identifiers = {d["identifier"] for d in data}
+            current = [
+                item for item in current if item.get("identifier") not in identifiers
+            ]
             current.extend(data)
+            self._write_file(current)
 
-            with open(self.path, "w") as f:
-                json.dump(current, f, indent=4)
+    def load(
+        self, query: Mapping[str, Any], raise_on_collision: bool = True
+    ) -> Mapping[str, Any]:
+        if not query:
+            raise ValueError("Query dictionary cannot be empty")
 
-    def load(self, query: Mapping[str, Any], **kwargs) -> Mapping[str, Any]:
-        """
-        Load data from a JSON file given a query
-
-        Kwargs
-        -------
-        allow_collisions (bool, optional): Defaults to False.
-            Raises an error if the query returns more than one result.
-        """
         with self.rlock:
-            if not query:
-                raise ValueError("Query dictionary cannot be empty")
+            data = self._read_file()
+            matches = [
+                item for item in data if all(item[k] == v for k, v in query.items())
+            ]
 
-            with open(self.path, "r") as f:
-                data = json.load(f)
+            if raise_on_collision and len(matches) > 1:
+                raise SaverError("Collision found")
+            if not matches:
+                raise SaverError("Item not found")
+            return matches[0]
 
-            allow_collisions = kwargs.get("allow_collisions", False)
-            matches: List[Mapping[str, Any]] = []
-
-            for item in data:
-                if all(item[key] == query[key] for key in query):
-                    matches.append(item)
-                    # Save time by checking for collisions each iteration
-                    if allow_collisions and len(matches) > 1:
-                        raise SaverError("Collision found")
-
-            if len(matches) >= 1:
-                return matches[0]
-
-            raise SaverError("Item not found")
-
-    def delete(self, query: Mapping[str, Any], **kwargs) -> None:
-        """
-        Delete data from a JSON file given a query
-
-        Kwargs
-        -------
-        all_instances (bool, optional): Defaults to True.
-            Deletes all instances of the query.
-
-        clear_all (bool, optional): Defaults to False.
-            Deletes all data in the file.
-        """
+    def delete(
+        self,
+        query: Mapping[str, Any],
+        all_instances: bool = True,
+        clear_all: bool = False,
+    ) -> None:
         with self.wlock:
+            if clear_all:
+                return self._write_file([])
+
             if not query:
                 raise ValueError("Query dictionary cannot be empty")
 
-            delete_all_instances = kwargs.get("all_instances", True)
-            clear_all = kwargs.get("clear_all", False)
-
-            if clear_all:
-                with open(self.path, "w") as f:
-                    return json.dump([], f)
-
-            with open(self.path, "r") as f:
-                data = json.load(f)
-
-            assert isinstance(data, list), "JSON must be an array"
-
-            # Copy the list to avoid modifying the original
-            for item in data.copy():
-                if all(item[key] == query[key] for key in query):
-                    data.remove(item)
-                    if not delete_all_instances:
-                        break
-
-            with open(self.path, "w") as f:
-                json.dump(data, f, indent=4)
+            data = self._read_file()
+            new_data = []
+            for item in data:
+                if all(item[k] == v for k, v in query.items()):
+                    if not all_instances:
+                        continue
+                else:
+                    new_data.append(item)
+            self._write_file(new_data)
 
 
 class SqliteSaver(SaverProtocol):
-    """
-    CRUD methods for SQLite3 files
-    """
-
-    __slots__ = (
-        "path",
-        "conn",
-        "cursor",
-        "rwlock",
-        "rlock",
-        "wlock",
-    )
+    __slots__ = ("path", "conn", "cursor", "rwlock", "rlock", "wlock")
 
     def __init__(self, path: str = "sessions.db") -> None:
         self.path = path
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.cursor = self.conn.cursor()
-
-        # Create table
         self.cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions (
@@ -175,39 +112,32 @@ class SqliteSaver(SaverProtocol):
                 password TEXT NOT NULL, 
                 cookies TEXT
             )
-        """
+            """
         )
-
-        # Cleanup
         atexit.register(self.cursor.close)
         atexit.register(self.conn.close)
 
-        # Sqlite may not behave as intended under multi-threaded environments
         self.rwlock = rwlock.RWLockFairD()
         self.rlock = self.rwlock.gen_rlock()
         self.wlock = self.rwlock.gen_wlock()
 
     def __str__(self) -> str:
-        return f"SqliteSaver()"
+        return "SqliteSaver()"
 
-    def save(self, data: List[Mapping[str, Any]], **kwargs) -> None:
-        """
-        Saves data to a SQLite3 database
+    def _build_where_clause(self, query: Mapping[str, Any]) -> tuple[str, list]:
+        sql = " AND ".join(f"{k}=?" for k in query)
+        params = list(query.values())
+        return sql, params
 
-        Kwargs
-        -------
-        overwrite (bool, optional): Defaults to False.
-            Overwrites the entire database instead of appending.
-        """
+    def save(self, data: List[Mapping[str, Any]], overwrite: bool = False) -> None:
+        if not data:
+            raise ValueError("No data to save")
+
         with self.wlock:
             try:
-                if len(data) == 0:
-                    raise ValueError("No data to save")
-
-                if kwargs.get("overwrite", False):
+                if overwrite:
                     self.cursor.execute("DELETE FROM sessions")
                     self.conn.commit()
-
                 for item in data:
                     self.cursor.execute(
                         "INSERT INTO sessions VALUES (?, ?, ?)",
@@ -217,67 +147,34 @@ class SqliteSaver(SaverProtocol):
                             json.dumps(item["cookies"]),
                         ),
                     )
-
                 self.conn.commit()
             except Exception as e:
                 self.conn.rollback()
                 raise SaverError(str(e))
 
     def load(self, query: Mapping[str, Any], **kwargs) -> Mapping[str, Any]:
-        """
-        Loads data from a SQLite3 database given a query
-        """
+        if not query:
+            raise ValueError("Query dictionary cannot be empty")
 
-        with self.rlock:
-            if not query:
-                raise ValueError("Query dictionary cannot be empty")
-
-            # Turn dictionary into sql query
-            sql = "SELECT * FROM sessions WHERE "
-            params = []
-
-            for key, value in query.items():
-                sql += f"{key} = ? AND "
-                params.append(value)
-
-            self.cursor.execute(sql[:-5], tuple(params))
-            result = self.cursor.fetchall()
-
-            if len(result) == 0:
-                raise SaverError("Item not found")
-
-            return result[0]
+        sql, params = self._build_where_clause(query)
+        self.cursor.execute(f"SELECT * FROM sessions WHERE {sql}", tuple(params))
+        result = self.cursor.fetchall()
+        if not result:
+            raise SaverError("Item not found")
+        return result[0]
 
     def delete(self, query: Mapping[str, Any], **kwargs) -> None:
-        """
-        Deletes data from a SQLite3 database given a query
-        """
+        if not query:
+            raise ValueError("Query dictionary cannot be empty")
+
         with self.wlock:
-            if not query:
-                raise ValueError("Query dictionary cannot be empty")
-
-            # Turn dictionary into sql query
-            sql = "DELETE FROM sessions WHERE "
-            params = []
-
-            for key, value in query.items():
-                sql += f"{key} = ? AND "
-                params.append(value)
-
-            self.cursor.execute(sql[:-5], tuple(params))
+            sql, params = self._build_where_clause(query)
+            self.cursor.execute(f"DELETE FROM sessions WHERE {sql}", tuple(params))
             self.conn.commit()
 
 
 class MongoSaver(SaverProtocol):
-    """
-    CRUD methods for MongoDB
-    """
-
-    __slots__ = (
-        "conn",
-        "database",
-        "collection",
-    )
+    __slots__ = ("conn", "database", "collection")
 
     def __init__(
         self,
@@ -288,76 +185,61 @@ class MongoSaver(SaverProtocol):
         self.conn = pymongo.MongoClient(host)
         self.database = self.conn[database_name]
         self.collection = self.database[collection]
-
         atexit.register(self.conn.close)
 
     def __str__(self) -> str:
-        return f"MongoSaver()"
+        return "MongoSaver()"
 
     def save(self, data: List[Mapping[str, Any]], **kwargs) -> None:
-        if len(data) == 0:
+        if not data:
             raise ValueError("No data to save")
-
         self.collection.insert_many(data)
 
     def load(self, query: Mapping[str, Any], **kwargs) -> Mapping[str, Any]:
         if not query:
             raise ValueError("Query dictionary cannot be empty")
-
         result = self.collection.find_one(query)
-
         if result is None:
             raise SaverError("Item not found")
-
         return result
 
     def delete(self, query: Mapping[str, Any], **kwargs) -> None:
         if not query:
             raise ValueError("Query dictionary cannot be empty")
-
         self.collection.delete_one(query)
 
 
 class RedisSaver(SaverProtocol):
+    __slots__ = ("client",)
+
     def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0) -> None:
         self.client = redis.StrictRedis(host=host, port=port, db=db)
         atexit.register(self.client.close)
 
     def __str__(self) -> str:
-        return f"RedisSaver()"
+        return "RedisSaver()"
 
     def save(self, data: List[Mapping[str, Any]], **kwargs) -> None:
-        if len(data) == 0:
+        if not data:
             raise ValueError("No data to save")
-
         for item in data:
             self.client.set(item["identifier"], json.dumps(item))
 
     def load(self, query: Mapping[str, Any], **kwargs) -> Mapping[str, Any]:
-        """
-        Loads data from a Redis database given a query.
-
-        Due to the nature of Redis, the query must be a singular identifier.
-        """
         if not query:
             raise ValueError("Query dictionary cannot be empty")
-
         identifier = query.get("identifier")
         if not identifier:
             raise ValueError("Identifier is required for Redis lookup")
-
         result = self.client.get(identifier)
         if not result:
             raise SaverError("Item not found")
-
-        return json.loads(str(result))
+        return json.loads(result)
 
     def delete(self, query: Mapping[str, Any], **kwargs) -> None:
         if not query:
             raise ValueError("Query dictionary cannot be empty")
-
         identifier = query.get("identifier")
         if not identifier:
             raise ValueError("Identifier is required for Redis lookup")
-
         self.client.delete(identifier)

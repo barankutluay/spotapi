@@ -1,22 +1,28 @@
-import re
-import base64
-import pyotp
 import atexit
-import requests
+import base64
+import re
 import time
-from typing import Tuple
-from collections.abc import Mapping
-from spotapi.utils.logger import Logger
-from spotapi.types.annotations import enforce
-from spotapi.types.alias import _UStr, _Undefined
+from typing import Mapping, Optional, Tuple
+
+import pyotp
+import requests
+
 from spotapi.exceptions import BaseClientError
 from spotapi.http.request import TLSClient
+from spotapi.spotapitypes.alias import _Undefined, _UStr
+from spotapi.spotapitypes.annotations import enforce
+from spotapi.utils.logger import Logger
 
 # Fallback hardcoded secret (version 18)
-_FALLBACK_SECRET = (18, bytearray([70, 60, 33, 57, 92, 120, 90, 33, 32, 62, 62, 55, 126, 93, 66, 35, 108, 68]))
+_FALLBACK_SECRET: Tuple[int, bytearray] = (
+    18,
+    bytearray(
+        [70, 60, 33, 57, 92, 120, 90, 33, 32, 62, 62, 55, 126, 93, 66, 35, 108, 68]
+    ),
+)
 
 # Cache storage
-_secret_cache: Tuple[int, bytearray] | None = None
+_secret_cache: Optional[Tuple[int, bytearray]] = None
 _cache_expiry: float = -1
 _CACHE_TTL = 15 * 60  # 15 minutes
 
@@ -24,6 +30,15 @@ __all__ = ["BaseClient", "BaseClientError"]
 
 
 def get_latest_totp_secret() -> Tuple[int, bytearray]:
+    """
+    Fetch the latest TOTP secret from remote source or fallback.
+
+    Returns:
+        Tuple[int, bytearray]: Version and secret bytes.
+
+    Raises:
+        BaseClientError: If fetching secrets fails.
+    """
     global _secret_cache, _cache_expiry
 
     if _secret_cache and time.time() < _cache_expiry:
@@ -33,24 +48,32 @@ def get_latest_totp_secret() -> Tuple[int, bytearray]:
         url = "https://github.com/Thereallo1026/spotify-secrets/blob/main/secrets/secretDict.json?raw=true"
         resp = requests.get(url, timeout=5)
         if not resp.ok:
-            raise BaseClientError(f"Failed to fetch secrets: {response.status_code}")
-        
-        secrets = response.json()
+            raise BaseClientError(f"Failed to fetch secrets: {resp.status_code}")
+
+        secrets = resp.json()
         version = max(secrets, key=int)
         secret_list = secrets[version]
 
         if not isinstance(secret_list, list):
-            raise BaseClientError(f"Expected a list of integers, got {type(secret_list)}")
+            raise BaseClientError(
+                f"Expected a list of integers, got {type(secret_list)}"
+            )
 
         _secret_cache = (version, bytearray(secret_list))
         _cache_expiry = time.time() + _CACHE_TTL
         return _secret_cache
-    except Exception as e: 
+    except Exception as e:
         Logger.error(f"Failed to fetch secrets: {e}. Falling back to default secret.")
         return _FALLBACK_SECRET
 
 
 def generate_totp() -> Tuple[str, int]:
+    """
+    Generate a Time-based One-Time Password (TOTP) for Spotify authentication.
+
+    Returns:
+        Tuple[str, int]: TOTP string and the version of the secret.
+    """
     version, secret_bytes = get_latest_totp_secret()
     transformed = [e ^ ((t % 33) + 9) for t, e in enumerate(secret_bytes)]
     joined = "".join(str(num) for num in transformed)
@@ -59,8 +82,22 @@ def generate_totp() -> Tuple[str, int]:
     totp = pyotp.TOTP(secret).now()
     return totp, version
 
+
 @enforce
 class BaseClient:
+    """
+    Base Spotify client for authentication, session management, and playlist hash extraction.
+
+    Attributes:
+        js_pack (_UStr): URL of the Spotify web player JS pack.
+        client_version (_UStr): Spotify client version string.
+        access_token (_UStr): Web access token for Spotify.
+        client_token (_UStr): Spotify client token.
+        client_id (_UStr): Spotify client ID.
+        device_id (_UStr): Spotify device ID.
+        raw_hashes (_UStr): Raw JS content containing playlist hashes.
+    """
+
     js_pack: _UStr = _Undefined
     client_version: _UStr = _Undefined
     access_token: _UStr = _Undefined
@@ -70,6 +107,12 @@ class BaseClient:
     raw_hashes: _UStr = _Undefined
 
     def __init__(self, client: TLSClient) -> None:
+        """
+        Initialize BaseClient with a TLSClient instance.
+
+        Args:
+            client (TLSClient): HTTP client for sending requests.
+        """
         self.client = client
         self.client.authenticate = lambda kwargs: self._auth_rule(kwargs)
 
@@ -77,7 +120,11 @@ class BaseClient:
         self.client.headers.update(
             {
                 "Content-Type": "application/json;charset=UTF-8",
-                "User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{self.browser_version}.0.0.0 Safari/537.36",
+                "User-Agent": (
+                    f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    f"AppleWebKit/537.36 (KHTML, like Gecko) "
+                    f"Chrome/{self.browser_version}.0.0.0 Safari/537.36"
+                ),
                 "Sec-Ch-Ua": f'"Chromium";v="{self.browser_version}", "Not(A:Brand";v="24", "Google Chrome";v="{self.browser_version}"',
             }
         )
@@ -85,9 +132,17 @@ class BaseClient:
         atexit.register(self.client.close)
 
     def _auth_rule(self, kwargs: dict) -> dict:
+        """
+        Add authentication headers to a request.
+
+        Args:
+            kwargs (dict): Request arguments.
+
+        Returns:
+            dict: Updated request arguments with authentication headers.
+        """
         if self.client_token is _Undefined:
             self.get_client_token()
-
         if self.access_token is _Undefined:
             self.get_session()
 
@@ -96,7 +151,7 @@ class BaseClient:
 
         kwargs["headers"].update(
             {
-                "Authorization": "Bearer " + str(self.access_token),
+                "Authorization": f"Bearer {self.access_token}",
                 "Client-Token": self.client_token,
                 "Spotify-App-Version": self.client_version,
             }.items()
@@ -105,6 +160,12 @@ class BaseClient:
         return kwargs
 
     def _get_auth_vars(self) -> None:
+        """
+        Retrieve access token and client ID via TOTP authentication.
+
+        Raises:
+            BaseClientError: If authentication request fails.
+        """
         if self.access_token is _Undefined or self.client_id is _Undefined:
             totp, version = generate_totp()
             query = {
@@ -115,14 +176,21 @@ class BaseClient:
                 "totpServer": totp,
             }
             resp = self.client.get("https://open.spotify.com/api/token", params=query)
-
             if resp.fail:
-                raise BaseClientError("Could not get session auth tokens", error=resp.error.string)
+                raise BaseClientError(
+                    "Could not get session auth tokens", error=resp.error.string
+                )
 
             self.access_token = resp.response["accessToken"]
             self.client_id = resp.response["clientId"]
 
     def get_session(self) -> None:
+        """
+        Retrieve Spotify session and extract JS pack URL and device ID.
+
+        Raises:
+            BaseClientError: If session request fails.
+        """
         resp = self.client.get("https://open.spotify.com")
         if resp.fail:
             raise BaseClientError("Could not get session", error=resp.error.string)
@@ -138,9 +206,14 @@ class BaseClient:
         self._get_auth_vars()
 
     def get_client_token(self) -> None:
+        """
+        Fetch client token from Spotify.
+
+        Raises:
+            BaseClientError: If token request fails or invalid response received.
+        """
         if not (self.client_id and self.device_id):
             self.get_session()
-
         if not self.client_version:
             self.get_sha256_hash()
 
@@ -166,7 +239,6 @@ class BaseClient:
         }
 
         resp = self.client.post(url, json=payload, headers=headers)
-
         if resp.fail:
             raise BaseClientError("Could not get client token", error=resp.error.string)
 
@@ -181,9 +253,20 @@ class BaseClient:
         self.client_token = resp.response["granted_token"]["token"]
 
     def part_hash(self, name: str) -> str:
+        """
+        Extract a specific hash from Spotify JS pack.
+
+        Args:
+            name (str): Name of the hash to extract.
+
+        Returns:
+            str: Hash string.
+
+        Raises:
+            ValueError: If hashes are unavailable.
+        """
         if self.raw_hashes is _Undefined:
             self.get_sha256_hash()
-
         if self.raw_hashes is _Undefined:
             raise ValueError("Could not get playlist hashes")
 
@@ -193,39 +276,54 @@ class BaseClient:
             return str(self.raw_hashes).split(f'"{name}","mutation","')[1].split('"')[0]
 
     def get_sha256_hash(self) -> None:
+        """
+        Fetch and parse SHA256 hashes from Spotify JS pack.
+
+        Raises:
+            BaseClientError: If request fails.
+            ValueError: If JS pack unavailable.
+        """
         if self.js_pack is _Undefined:
             self.get_session()
-
         if self.js_pack is _Undefined:
             raise ValueError("Could not get playlist hashes")
 
         resp = self.client.get(str(self.js_pack))
         if resp.fail:
-            raise BaseClientError("Could not get playlist hashes", error=resp.error.string)
+            raise BaseClientError(
+                "Could not get playlist hashes", error=resp.error.string
+            )
 
         assert isinstance(resp.response, str), "Invalid HTML response"
         self.raw_hashes = resp.response
         self.client_version = resp.response.split('clientVersion:"')[1].split('"')[0]
 
-        self.xpui_route_num = resp.response.split(':"xpui-routes-search"')[0].split(",")[-1]
-        self.xpui_route_tracks_num = resp.response.split(':"xpui-routes-track-v2"')[0].split(",")[-1]
+        self.xpui_route_num = resp.response.split(':"xpui-routes-search"')[0].split(
+            ","
+        )[-1]
+        self.xpui_route_tracks_num = resp.response.split(':"xpui-routes-track-v2"')[
+            0
+        ].split(",")[-1]
 
         xpui_route_pattern = rf'{self.xpui_route_num}:"([^"]*)"'
         self.xpui_route = re.findall(xpui_route_pattern, resp.response)[-1]
 
         xpui_route_tracks_pattern = rf'{self.xpui_route_tracks_num}:"([^"]*)"'
-        self.xpui_route_tracks = re.findall(xpui_route_tracks_pattern, resp.response)[-1]
+        self.xpui_route_tracks = re.findall(xpui_route_tracks_pattern, resp.response)[
+            -1
+        ]
 
-        urls = (
+        for url in (
             f"https://open.spotifycdn.com/cdn/build/web-player/xpui-routes-search.{self.xpui_route}.js",
             f"https://open.spotifycdn.com/cdn/build/web-player/xpui-routes-track-v2.{self.xpui_route_tracks}.js",
-        )
-
-        for url in urls:
+        ):
             resp = self.client.get(url)
             if resp.fail:
-                raise BaseClientError("Could not get xpui hashes", error=resp.error.string)
+                raise BaseClientError(
+                    "Could not get xpui hashes", error=resp.error.string
+                )
             self.raw_hashes += resp.response
 
     def __str__(self) -> str:
+        """Return string representation of BaseClient."""
         return f"{self.__class__.__name__}(...)"

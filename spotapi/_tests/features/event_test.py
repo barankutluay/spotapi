@@ -1,7 +1,9 @@
 import threading
-from spotapi import EventManager
-from spotapi.types.data import PlayerState
+
 from session import _MainFixture
+
+from spotapi import EventManager
+from spotapi.spotapitypes.data import PlayerState
 
 
 def test_event_manager_initialization():

@@ -1,7 +1,7 @@
 import pytest
-from spotapi import Artist, ArtistError
 from session import _MainFixture
 
+from spotapi import Artist, ArtistError
 
 instance = Artist(login=_MainFixture.login)
 

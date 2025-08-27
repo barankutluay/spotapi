@@ -1,121 +1,171 @@
-from typing import Deque
 from collections import deque
 from threading import Lock
+from typing import (
+    Any,
+    Callable,
+    Deque,
+    Generator,
+    Generic,
+    Mapping,
+    Optional,
+    TypeAlias,
+    TypeVar,
+)
+
+from spotapi import Artist, Podcast, PublicAlbum, PublicPlaylist, Song
 from spotapi.client import TLSClient
-from spotapi import Artist, PublicAlbum, PublicPlaylist, Song, Podcast
-from typing import Generic, TypeVar, Callable, Generator, Mapping, Any, TypeAlias
 
 T = TypeVar("T")
-
-
-class Pooler(Generic[T]):
-    """
-    Pooler is a generic object pool for caching and reusing objects.
-    Inspired by golang's sync.Pool
-    """
-
-    def __init__(
-        self, factory: Callable[..., T], *, max_cache: int | None = None
-    ) -> None:
-        self.obj_factory = factory
-        self.queue: Deque[T] = deque(maxlen=max_cache)
-        self.lock = Lock()
-
-    def get(self) -> T:
-        """
-        Get an object from the pool.
-        If the pool is empty, a new object will be created.
-        """
-        with self.lock:
-            if self.queue:
-                return self.queue.popleft()
-            return self.obj_factory()
-
-    def put(self, obj: T) -> None:
-        """
-        Put an object back into the pool.
-        """
-        with self.lock:
-            self.queue.append(obj)
-
-    def clear(self) -> None:
-        with self.lock:
-            self.queue.clear()
-
-
-client_pool: Pooler[TLSClient] = Pooler(
-    factory=lambda: TLSClient("chrome_120", "", auto_retries=3)
-)
 GeneratorType: TypeAlias = Generator[Mapping[str, Any], None, None]
 
 
+class Pooler(Generic[T]):
+    """A thread-safe generic object pool for caching and reusing objects."""
+
+    def __init__(
+        self, factory: Callable[..., T], *, max_cache: Optional[int] = None
+    ) -> None:
+        """
+        Args:
+            factory: Callable that creates a new object if pool is empty.
+            max_cache: Maximum number of objects to cache. Defaults to None (unbounded).
+        """
+        self._factory: Callable[..., T] = factory
+        self._queue: Deque[T] = deque(maxlen=max_cache)
+        self._lock = Lock()
+
+    def get(self) -> T:
+        """Retrieve an object from the pool or create a new one if pool is empty."""
+        with self._lock:
+            if self._queue:
+                return self._queue.popleft()
+            return self._factory()
+
+    def put(self, obj: T) -> None:
+        """Return an object to the pool."""
+        with self._lock:
+            self._queue.append(obj)
+
+    def clear(self) -> None:
+        """Clear all cached objects."""
+        with self._lock:
+            self._queue.clear()
+
+
+# Global TLSClient pool
+client_pool: Pooler[TLSClient] = Pooler(
+    factory=lambda: TLSClient("chrome_120", "", auto_retries=3)
+)
+
+
+class ClientContext:
+    """Context manager for safely acquiring and releasing a TLSClient from the pool."""
+
+    def __enter__(self) -> TLSClient:
+        self._client = client_pool.get()
+        return self._client
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        client_pool.put(self._client)
+
+
 class Public:
-    """
-    Public is a class for getting public information from Spotify.
-    It does not directly implement any of the methods, but points to the original methods.
-    """
+    """Access public Spotify data via Artist, Album, Playlist, Song, and Podcast APIs."""
 
     @staticmethod
-    def artist_search(query: str, /) -> GeneratorType:
-        client = client_pool.get()
-        artist = Artist(client=client)
-        try:
+    def artist_search(query: str) -> GeneratorType:
+        """Search for artists by query string.
+
+        Args:
+            query: Search query for artist names.
+
+        Yields:
+            Mapping[str, Any]: Artist information in pages.
+        """
+        with ClientContext() as client:
+            artist = Artist(client=client)
             yield from artist.paginate_artists(query)
-        finally:
-            client_pool.put(client)
 
     @staticmethod
-    def album_info(album_id: str, /) -> GeneratorType:
-        client = client_pool.get()
-        album = PublicAlbum(album_id, client=client)
-        try:
+    def album_info(album_id: str) -> GeneratorType:
+        """Retrieve album information by album ID.
+
+        Args:
+            album_id: Spotify album ID.
+
+        Yields:
+            Mapping[str, Any]: Album tracks in pages.
+        """
+        with ClientContext() as client:
+            album = PublicAlbum(album_id, client=client)
             yield from album.paginate_album()
-        finally:
-            client_pool.put(client)
 
     @staticmethod
-    def playlist_info(playlist_id: str, /) -> GeneratorType:
-        client = client_pool.get()
-        playlist = PublicPlaylist(playlist_id, client=client)
-        try:
+    def playlist_info(playlist_id: str) -> GeneratorType:
+        """Retrieve playlist information by playlist ID.
+
+        Args:
+            playlist_id: Spotify playlist ID.
+
+        Yields:
+            Mapping[str, Any]: Playlist tracks in pages.
+        """
+        with ClientContext() as client:
+            playlist = PublicPlaylist(playlist_id, client=client)
             yield from playlist.paginate_playlist()
-        finally:
-            client_pool.put(client)
 
     @staticmethod
-    def song_search(query: str, /) -> GeneratorType:
-        client = client_pool.get()
-        song = Song(client=client)
-        try:
+    def song_search(query: str) -> GeneratorType:
+        """Search for songs by query string.
+
+        Args:
+            query: Search query for songs.
+
+        Yields:
+            Mapping[str, Any]: Song information in pages.
+        """
+        with ClientContext() as client:
+            song = Song(client=client)
             yield from song.paginate_songs(query)
-        finally:
-            client_pool.put(client)
 
     @staticmethod
-    def song_info(song_id: str, /) -> Mapping[str, Any]:
-        client = client_pool.get()
-        song = Song(client=client)
-        try:
-            info = song.get_track_info(song_id)
-        finally:
-            client_pool.put(client)
-        return info
+    def song_info(song_id: str) -> Mapping[str, Any]:
+        """Retrieve information for a specific song by ID.
+
+        Args:
+            song_id: Spotify song ID.
+
+        Returns:
+            Mapping[str, Any]: Song details.
+        """
+        with ClientContext() as client:
+            song = Song(client=client)
+            return song.get_track_info(song_id)
 
     @staticmethod
-    def podcast_info(podcast_id: str, /) -> GeneratorType:
-        client = client_pool.get()
-        podcast = Podcast(podcast_id, client=client)
-        try:
+    def podcast_info(podcast_id: str) -> GeneratorType:
+        """Retrieve podcast episodes by podcast ID.
+
+        Args:
+            podcast_id: Spotify podcast ID.
+
+        Yields:
+            Mapping[str, Any]: Podcast episodes in pages.
+        """
+        with ClientContext() as client:
+            podcast = Podcast(podcast_id, client=client)
             yield from podcast.paginate_podcast()
-        finally:
-            client_pool.put(client)
 
     @staticmethod
-    def podcast_episode_info(episode_id: str, /) -> Mapping[str, Any]:
-        client = client_pool.get()
-        podcast = Podcast(client=client)
-        try:
-            info = podcast.get_episode(episode_id)
-        finally:
-            client_pool.put(client)
-        return info
+    def podcast_episode_info(episode_id: str) -> Mapping[str, Any]:
+        """Retrieve information for a specific podcast episode.
+
+        Args:
+            episode_id: Spotify episode ID.
+
+        Returns:
+            Mapping[str, Any]: Episode details.
+        """
+        with ClientContext() as client:
+            podcast = Podcast(client=client)
+            return podcast.get_episode(episode_id)

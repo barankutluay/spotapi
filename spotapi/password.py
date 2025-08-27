@@ -1,9 +1,11 @@
 import time
 import uuid
-from spotapi.utils.strings import parse_json_string
-from spotapi.types.annotations import enforce
+from typing import Optional
+
 from spotapi.exceptions import PasswordError
-from spotapi.types.data import Config
+from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapitypes.data import Config
+from spotapi.utils.strings import parse_json_string
 
 __all__ = ["Password", "PasswordError"]
 
@@ -11,15 +13,24 @@ __all__ = ["Password", "PasswordError"]
 @enforce
 class Password:
     """
-    Preforms password recoveries.
+    Handles Spotify password recovery.
 
-    Parameters
-    ----------
-    cfg (Config): Configuration object.
-    email (Optional[str], optional): Email address to use for recovery. Defaults to None.
-    username (Optional[str], optional): Username to use for recovery. Defaults to None.
+    This class manages session retrieval, captcha solving, and
+    password reset requests.
 
-    Email or username must be provided.
+    Attributes:
+        solver: Captcha solver instance from configuration.
+        client: HTTP client from configuration.
+        logger: Logger from configuration.
+        identifier_credentials (str): Email or username for recovery.
+        csrf (Optional[str]): CSRF token for requests.
+        flow_id (Optional[str]): Unique flow identifier.
+
+    Raises:
+        ValueError: If neither email nor username is provided.
+        PasswordError: If session retrieval fails.
+        PasswordError: If captcha solving fails.
+        PasswordError: If password reset submission fails.
     """
 
     __slots__ = (
@@ -28,71 +39,111 @@ class Password:
         "logger",
         "identifier_credentials",
         "csrf",
-        "flowID",
+        "flow_id",
     )
+
+    PASSWORD_RESET_URL = "https://accounts.spotify.com/en/password-reset"
+    RECOVERY_API_URL = "https://accounts.spotify.com/api/password/recovery"
+    SITE_KEY = "6LfCVLAUAAAAALFwwRnnCJ12DalriUGbj8FW_J39"
 
     def __init__(
         self,
         cfg: Config,
         *,
-        email: str | None = None,
-        username: str | None = None,
+        email: Optional[str] = None,
+        username: Optional[str] = None,
     ) -> None:
+        """
+        Initialize Password recovery handler.
+
+        Args:
+            cfg (Config): Configuration containing solver, client, and logger.
+            email (Optional[str]): Email address for recovery.
+            username (Optional[str]): Username for recovery.
+
+        Raises:
+            ValueError: If neither email nor username is provided.
+        """
         self.solver = cfg.solver
         self.client = cfg.client
         self.logger = cfg.logger
 
-        self.identifier_credentials = username or email
-
+        self.identifier_credentials: Optional[str] = username or email
         if not self.identifier_credentials:
             raise ValueError("Must provide an email or username")
 
-    def _get_session(self) -> None:
-        url = "https://accounts.spotify.com/en/password-reset"
-        resp = self.client.get(url)
+        self.csrf: Optional[str] = None
+        self.flow_id: Optional[str] = None
 
+    def _get_session(self) -> None:
+        """
+        Retrieve password reset session and CSRF token.
+
+        Raises:
+            PasswordError: If session retrieval fails.
+        """
+        resp = self.client.get(self.PASSWORD_RESET_URL)
         if resp.fail:
             raise PasswordError("Could not get session", error=resp.error.string)
 
         self.csrf = parse_json_string(resp.response, "csrf")
-        self.flowID = str(uuid.uuid4())
+        self.flow_id = str(uuid.uuid4())
 
     def _reset_password(self, token: str) -> None:
+        """
+        Submit password recovery request with solved captcha token.
+
+        Args:
+            token (str): Solved captcha token.
+
+        Raises:
+            PasswordError: If password reset submission fails.
+        """
         payload = {
             "captcha": token,
             "emailOrUsername": self.identifier_credentials,
-            "flowId": self.flowID,
+            "flowId": self.flow_id,
         }
-        url = "https://accounts.spotify.com/api/password/recovery"
-        headers = {
-            "X-Csrf-Token": self.csrf,
-        }
+        headers = {"X-Csrf-Token": self.csrf}
 
-        resp = self.client.post(url, data=payload, headers=headers)
-
+        resp = self.client.post(self.RECOVERY_API_URL, data=payload, headers=headers)
         if resp.fail:
             raise PasswordError("Could not reset password", error=resp.error.string)
 
     def reset(self) -> None:
+        """
+        Perform full password recovery process.
+
+        Steps:
+            1. Retrieve session.
+            2. Solve captcha using configured solver.
+            3. Submit recovery request.
+
+        Raises:
+            PasswordError: If captcha solver is not set, fails to solve captcha,
+                           or password reset submission fails.
+        """
         self._get_session()
-        now = time.time()
+        start_time = time.time()
         self.logger.attempt("Solving captcha...")
 
         if self.solver is None:
             raise PasswordError("Solver not set")
 
         captcha_response = self.solver.solve_captcha(
-            "https://accounts.spotify.com/en/password-reset",
-            "6LfCVLAUAAAAALFwwRnnCJ12DalriUGbj8FW_J39",
+            self.PASSWORD_RESET_URL,
+            self.SITE_KEY,
             "password_reset_web/recovery",
             "v3",
         )
-
         if not captcha_response:
             raise PasswordError("Could not solve captcha")
 
-        self.logger.info("Solved Captcha", time_taken=f"{int(time.time() - now)}s")
+        self.logger.info(
+            "Solved Captcha", time_taken=f"{int(time.time() - start_time)}s"
+        )
         self._reset_password(captcha_response)
         self.logger.info(
-            "Successfully reset password", time_taken=f"{int(time.time() - now)}s"
+            "Successfully reset password",
+            time_taken=f"{int(time.time() - start_time)}s",
         )

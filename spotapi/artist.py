@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-from spotapi.types.annotations import enforce
-from typing import Any, Literal
-from collections.abc import Mapping, Generator
+from collections.abc import Mapping
+from typing import Any, Generator, Literal, Optional
+
 from spotapi.client import BaseClient
 from spotapi.exceptions import ArtistError
 from spotapi.http.request import TLSClient
 from spotapi.login import Login
-from spotapi.client import BaseClient
+from spotapi.spotapitypes.annotations import enforce
 
 __all__ = ["Artist", "ArtistError"]
 
@@ -16,40 +16,60 @@ __all__ = ["Artist", "ArtistError"]
 @enforce
 class Artist:
     """
-    A class that represents an artist in the Spotify catalog.
+    Represents an artist in the Spotify catalog.
 
-    Parameters
-    ----------
-    login : Optional[Login], optional
-        A logged in Login object. This is required for certain methods.
-        If not provided, some methods will raise a ValueError.
-    client : TLSClient, optional
-        A TLSClient used for making requests to the API.
-        If not provided, a default one will be used.
+    Provides methods to search, retrieve, follow, and unfollow artists.
+
+    Attributes:
+        _login (bool): Indicates if login is required for certain actions.
+        base (BaseClient): Base client for sending API requests.
     """
 
-    __slots__ = (
-        "_login",
-        "base",
-    )
+    __slots__ = ("_login", "base")
+
+    # API Endpoints
+    SEARCH_URL: str = "https://api-partner.spotify.com/pathfinder/v1/query"
+    ARTIST_OVERVIEW_URL: str = "https://api-partner.spotify.com/pathfinder/v1/query"
 
     def __init__(
         self,
-        login: Login | None = None,
+        login: Optional[Login] = None,
         *,
         client: TLSClient = TLSClient("chrome_120", "", auto_retries=3),
     ) -> None:
+        """
+        Initialize an Artist object.
+
+        Args:
+            login (Optional[Login]): Logged-in Login object for authentication.
+            client (TLSClient, optional): TLSClient for API requests. Defaults to Chrome 120.
+
+        Raises:
+            ValueError: If login is provided but not authenticated.
+        """
         if login and not login.logged_in:
             raise ValueError("Must be logged in")
 
         self._login: bool = bool(login)
-        self.base = BaseClient(client=login.client if (login is not None) else client)
+        self.base: BaseClient = BaseClient(client=login.client if login else client)
 
     def query_artists(
         self, query: str, /, limit: int = 10, *, offset: int = 0
     ) -> Mapping[str, Any]:
-        """Searches for an artist in the Spotify catalog"""
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
+        """
+        Search for artists in the Spotify catalog.
+
+        Args:
+            query (str): Search query string.
+            limit (int, optional): Number of results to return. Defaults to 10.
+            offset (int, optional): Result offset for pagination. Defaults to 0.
+
+        Returns:
+            Mapping[str, Any]: JSON response containing artist search results.
+
+        Raises:
+            ArtistError: If the request fails or an invalid response is received.
+        """
         params = {
             "operationName": "searchArtists",
             "variables": json.dumps(
@@ -72,11 +92,9 @@ class Artist:
             ),
         }
 
-        resp = self.base.client.post(url, params=params, authenticate=True)
-
+        resp = self.base.client.post(self.SEARCH_URL, params=params, authenticate=True)
         if resp.fail:
             raise ArtistError("Could not get artists", error=resp.error.string)
-
         if not isinstance(resp.response, Mapping):
             raise ArtistError("Invalid JSON")
 
@@ -85,11 +103,22 @@ class Artist:
     def get_artist(
         self, artist_id: str, /, *, locale_code: str = "en"
     ) -> Mapping[str, Any]:
-        """Gets an artist by ID"""
+        """
+        Retrieve detailed information for a specific artist by ID.
+
+        Args:
+            artist_id (str): Spotify artist ID (with or without 'artist:' prefix).
+            locale_code (str, optional): Locale code for returned content. Defaults to "en".
+
+        Returns:
+            Mapping[str, Any]: JSON response containing artist details.
+
+        Raises:
+            ArtistError: If request fails or invalid response is returned.
+        """
         if "artist:" in artist_id:
             artist_id = artist_id.split("artist:")[-1]
 
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
         params = {
             "operationName": "queryArtistOverview",
             "variables": json.dumps(
@@ -108,11 +137,11 @@ class Artist:
             ),
         }
 
-        resp = self.base.client.get(url, params=params, authenticate=True)
-
+        resp = self.base.client.get(
+            self.ARTIST_OVERVIEW_URL, params=params, authenticate=True
+        )
         if resp.fail:
             raise ArtistError("Could not get artist by ID", error=resp.error.string)
-
         if not isinstance(resp.response, Mapping):
             raise ArtistError("Invalid JSON response")
 
@@ -122,13 +151,18 @@ class Artist:
         self, query: str, /
     ) -> Generator[Mapping[str, Any], None, None]:
         """
-        Generator that fetches artists in chunks
+        Generator to fetch artists in chunks, useful for pagination.
 
-        Note: If total_count <= 100, then there is no need to paginate
+        Args:
+            query (str): Search query string.
+
+        Yields:
+            Mapping[str, Any]: JSON chunks of artists.
+
+        Note:
+            If total_count <= 100, pagination is not performed.
         """
         UPPER_LIMIT: int = 100
-
-        # We need to get the total artists first
         artists = self.query_artists(query, limit=UPPER_LIMIT)
         total_count: int = artists["data"]["searchV2"]["artists"]["totalCount"]
 
@@ -139,9 +173,8 @@ class Artist:
 
         offset = UPPER_LIMIT
         while offset < total_count:
-            yield self.query_artists(query, limit=UPPER_LIMIT, offset=offset)["data"][
-                "searchV2"
-            ]["artists"]["items"]
+            chunk = self.query_artists(query, limit=UPPER_LIMIT, offset=offset)
+            yield chunk["data"]["searchV2"]["artists"]["items"]
             offset += UPPER_LIMIT
 
     def _do_follow(
@@ -151,37 +184,55 @@ class Artist:
         *,
         action: Literal["addToLibrary", "removeFromLibrary"] = "addToLibrary",
     ) -> None:
+        """
+        Internal method to follow or unfollow an artist.
+
+        Args:
+            artist_id (str): Spotify artist ID.
+            action (Literal): Action to perform, either "addToLibrary" or "removeFromLibrary".
+
+        Raises:
+            ValueError: If not logged in.
+            ArtistError: If the request fails.
+        """
         if not self._login:
             raise ValueError("Must be logged in")
 
         if "artist:" in artist_id:
-            artist_id = artist_id.split("artist:")[1]
+            artist_id = artist_id.split("artist:")[-1]
 
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
         payload = {
-            "variables": {
-                "uris": [
-                    f"spotify:artist:{artist_id}",
-                ],
-            },
+            "variables": {"uris": [f"spotify:artist:{artist_id}"]},
             "operationName": action,
             "extensions": {
                 "persistedQuery": {
                     "version": 1,
                     "sha256Hash": self.base.part_hash(str(action)),
-                },
+                }
             },
         }
 
-        resp = self.base.client.post(url, json=payload, authenticate=True)
-
+        resp = self.base.client.post(self.SEARCH_URL, json=payload, authenticate=True)
         if resp.fail:
-            raise ArtistError("Could not follow artist", error=resp.error.string)
+            raise ArtistError(
+                f"Could not {action.replace('ToLibrary', '')} artist",
+                error=resp.error.string,
+            )
 
     def follow(self, artist_id: str, /) -> None:
-        """Follow an artist"""
-        return self._do_follow(artist_id)
+        """
+        Follow an artist by ID.
+
+        Args:
+            artist_id (str): Spotify artist ID.
+        """
+        self._do_follow(artist_id)
 
     def unfollow(self, artist_id: str, /) -> None:
-        """Unfollow an artist"""
-        return self._do_follow(artist_id, action="removeFromLibrary")
+        """
+        Unfollow an artist by ID.
+
+        Args:
+            artist_id (str): Spotify artist ID.
+        """
+        self._do_follow(artist_id, action="removeFromLibrary")

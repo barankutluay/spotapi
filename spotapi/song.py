@@ -1,11 +1,11 @@
 import json
-from typing import Any, List, Tuple
-from spotapi.types.annotations import enforce
+from typing import Any, Generator, Iterable, List, Mapping, Optional, Tuple
+
+from spotapi.client import BaseClient
 from spotapi.exceptions import SongError
 from spotapi.http.request import TLSClient
-from spotapi.client import BaseClient
-from collections.abc import Mapping, Iterable, Generator
 from spotapi.playlist import PrivatePlaylist, PublicPlaylist
+from spotapi.spotapitypes.annotations import enforce
 
 __all__ = ["Song", "SongError"]
 
@@ -13,205 +13,221 @@ __all__ = ["Song", "SongError"]
 @enforce
 class Song:
     """
-    Extends the PrivatePlaylist class with methods that can only be used while logged in.
-    These methods interact with songs and tend to be used in the context of a playlist.
+    Handles Spotify song operations within the context of a playlist.
 
-    Parameters
-    ----------
-    playlist (Optional[str]): The Spotify URI of the playlist.
-    client (Optional[TLSClient]): An instance of TLSClient to use for requests
+    This class allows searching songs, retrieving track information, adding/removing
+    songs from playlists, and liking songs. It requires a playlist instance for operations
+    that modify a playlist.
+
+    Args:
+        playlist (Optional[PrivatePlaylist]): Playlist context for modifications.
+        client (Optional[TLSClient]): HTTP client instance if no playlist is provided.
     """
 
-    __slots__ = (
-        "playlist",
-        "base",
-    )
+    __slots__ = ("playlist", "base")
 
     def __init__(
         self,
-        playlist: PrivatePlaylist | None = None,
+        playlist: Optional[PrivatePlaylist] = None,
         *,
         client: TLSClient = TLSClient("chrome_120", "", auto_retries=3),
     ) -> None:
         self.playlist = playlist
         self.base = BaseClient(client=playlist.login.client if playlist else client)
 
-    def get_track_info(self, track_id: str) -> Mapping[str, Any]:
-        """
-        Gets information about a specific song.
-        """
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "getTrack",
-            "variables": json.dumps(
-                {
-                    "uri": f"spotify:track:{track_id}",
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": self.base.part_hash("getTrack"),
-                    }
-                }
-            ),
-        }
-
-        resp = self.base.client.post(url, params=params, authenticate=True)
-
-        if resp.fail:
-            raise SongError("Could not get song info", error=resp.error.string)
-
-        if not isinstance(resp.response, Mapping):
-            raise SongError("Invalid JSON")
-
-        return resp.response
-
-    def query_songs(
-        self, query: str, /, limit: int = 10, *, offset: int = 0
+    def _send_post(
+        self, operation: str, variables: dict[str, Any]
     ) -> Mapping[str, Any]:
         """
-        Searches for songs in the Spotify catalog.
-        NOTE: Returns the raw result unlike paginate_songs which only returns the songs.
+        Sends a POST request to Spotify's PathFinder API and validates response.
+
+        Args:
+            operation (str): API operation name.
+            variables (dict[str, Any]): Request variables.
+
+        Returns:
+            Mapping[str, Any]: JSON response.
+
+        Raises:
+            SongError: If request fails or response is invalid.
         """
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        params = {
-            "operationName": "searchDesktop",
-            "variables": json.dumps(
-                {
-                    "searchTerm": query,
-                    "offset": offset,
-                    "limit": limit,
-                    "numberOfTopResults": 5,
-                    "includeAudiobooks": True,
-                    "includeArtistHasConcertsField": False,
-                    "includePreReleases": True,
-                    "includeLocalConcertsField": False,
-                }
-            ),
+        payload = {
+            "operationName": operation,
+            "variables": json.dumps(variables),
             "extensions": json.dumps(
                 {
                     "persistedQuery": {
                         "version": 1,
-                        "sha256Hash": self.base.part_hash("searchDesktop"),
+                        "sha256Hash": self.base.part_hash(operation),
                     }
                 }
             ),
         }
 
-        resp = self.base.client.post(url, params=params, authenticate=True)
-
+        resp = self.base.client.post(url, json=payload, authenticate=True)
         if resp.fail:
-            raise SongError("Could not get songs", error=resp.error.string)
+            raise SongError(
+                f"Could not execute operation {operation}", error=resp.error.string
+            )
 
         if not isinstance(resp.response, Mapping):
-            raise SongError("Invalid JSON")
+            raise SongError("Invalid JSON response")
 
         return resp.response
 
-    def paginate_songs(self, query: str, /) -> Generator[Mapping[str, Any], None, None]:
+    def get_track_info(self, track_id: str) -> Mapping[str, Any]:
         """
-        Generator that fetches songs in chunks
+        Retrieves information for a specific track.
 
-        Note: If total_count <= 100, then there is no need to paginate
+        Args:
+            track_id (str): Spotify track ID.
+
+        Returns:
+            Mapping[str, Any]: Track information.
+
+        Raises:
+            SongError: If request fails or response is invalid.
         """
-        UPPER_LIMIT: int = 100
-        # We need to get the total songs first
+        return self._send_post("getTrack", {"uri": f"spotify:track:{track_id}"})
+
+    def query_songs(
+        self, query: str, limit: int = 10, *, offset: int = 0
+    ) -> Mapping[str, Any]:
+        """
+        Searches for songs in Spotify's catalog.
+
+        Args:
+            query (str): Search query.
+            limit (int, optional): Maximum number of results to fetch. Defaults to 10.
+            offset (int, optional): Pagination offset. Defaults to 0.
+
+        Returns:
+            Mapping[str, Any]: Raw search result.
+
+        Raises:
+            SongError: If request fails or response is invalid.
+        """
+        variables = {
+            "searchTerm": query,
+            "offset": offset,
+            "limit": limit,
+            "numberOfTopResults": 5,
+            "includeAudiobooks": True,
+            "includeArtistHasConcertsField": False,
+            "includePreReleases": True,
+            "includeLocalConcertsField": False,
+        }
+        return self._send_post("searchDesktop", variables)
+
+    def paginate_songs(
+        self, query: str
+    ) -> Generator[List[Mapping[str, Any]], None, None]:
+        """
+        Generator that yields search results in chunks.
+
+        Args:
+            query (str): Search query.
+
+        Yields:
+            List[Mapping[str, Any]]: Chunk of song items.
+
+        Raises:
+            SongError: If request fails or response is invalid.
+        """
+        UPPER_LIMIT = 100
         songs = self.query_songs(query, limit=UPPER_LIMIT)
         total_count: int = songs["data"]["searchV2"]["tracksV2"]["totalCount"]
 
         yield songs["data"]["searchV2"]["tracksV2"]["items"]
 
-        if total_count <= UPPER_LIMIT:
-            return
-
         offset = UPPER_LIMIT
         while offset < total_count:
-            yield self.query_songs(query, limit=UPPER_LIMIT, offset=offset)["data"][
+            chunk = self.query_songs(query, limit=UPPER_LIMIT, offset=offset)["data"][
                 "searchV2"
             ]["tracksV2"]["items"]
+            yield chunk
             offset += UPPER_LIMIT
 
-    def add_songs_to_playlist(self, song_ids: List[str], /) -> None:
-        """Adds multiple songs to the playlist"""
-        # This can be a bit slow when adding 500+ songs, maybe we should add a batch processing
+    def add_songs_to_playlist(self, song_ids: List[str]) -> None:
+        """
+        Adds multiple songs to the playlist.
+
+        Args:
+            song_ids (List[str]): List of Spotify track IDs.
+
+        Raises:
+            ValueError: If playlist is not set.
+            SongError: If request fails.
+        """
         if not self.playlist or not hasattr(self.playlist, "playlist_id"):
             raise ValueError("Playlist not set")
 
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {
-                "uris": [f"spotify:track:{song_id}" for song_id in song_ids],
-                "playlistUri": f"spotify:playlist:{self.playlist.playlist_id}",
-                "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
-            },
-            "operationName": "addToPlaylist",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash("addToPlaylist"),
-                }
-            },
+        variables = {
+            "uris": [f"spotify:track:{song_id}" for song_id in song_ids],
+            "playlistUri": f"spotify:playlist:{self.playlist.playlist_id}",
+            "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
         }
-        resp = self.base.client.post(url, json=payload, authenticate=True)
+        self._send_post("addToPlaylist", variables)
 
-        if resp.fail:
-            raise SongError("Could not add songs to playlist", error=resp.error.string)
+    def add_song_to_playlist(self, song_id: str) -> None:
+        """
+        Adds a single song to the playlist.
 
-    def add_song_to_playlist(self, song_id: str, /) -> None:
-        """Adds a song to the playlist"""
+        Args:
+            song_id (str): Spotify track ID.
+        """
         if "track" in song_id:
-            song_id = song_id.split("track/")[1]
-
+            song_id = song_id.split("track/")[-1]
         self.add_songs_to_playlist([song_id])
 
     def _stage_remove_song(self, uids: List[str]) -> None:
-        # If None, something internal went wrong
+        """
+        Removes songs from playlist by UID.
+
+        Args:
+            uids (List[str]): List of UIDs to remove.
+
+        Raises:
+            SongError: If request fails.
+        """
         assert self.playlist is not None, "Playlist not set"
-
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {
-                "playlistUri": f"spotify:playlist:{self.playlist.playlist_id}",
-                "uids": uids,
-            },
-            "operationName": "removeFromPlaylist",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash("removeFromPlaylist"),
-                }
-            },
+        variables = {
+            "playlistUri": f"spotify:playlist:{self.playlist.playlist_id}",
+            "uids": uids,
         }
-
-        resp = self.base.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise SongError(
-                "Could not remove song from playlist", error=resp.error.string
-            )
+        self._send_post("removeFromPlaylist", variables)
 
     @staticmethod
     def parse_playlist_items(
         items: Iterable[Mapping[str, Any]],
-        *,
-        song_id: str | None = None,
-        song_name: str | None = None,
+        song_id: Optional[str] = None,
+        song_name: Optional[str] = None,
         all_instances: bool = False,
     ) -> Tuple[List[str], bool]:
+        """
+        Finds UIDs of songs in playlist items.
+
+        Args:
+            items (Iterable[Mapping[str, Any]]): Playlist items.
+            song_id (Optional[str]): Spotify track ID to match.
+            song_name (Optional[str]): Song name to match.
+            all_instances (bool): Whether to return only the first match or all matches.
+
+        Returns:
+            Tuple[List[str], bool]: List of UIDs and a flag indicating stop condition.
+        """
         uids: List[str] = []
         for item in items:
-            is_song_id = song_id and song_id in item["itemV2"]["data"]["uri"]
-            is_song_name = (
+            matches_id = song_id and song_id in item["itemV2"]["data"]["uri"]
+            matches_name = (
                 song_name
                 and song_name.lower() in str(item["itemV2"]["data"]["name"]).lower()
             )
 
-            if is_song_id or is_song_name:
+            if matches_id or matches_name:
                 uids.append(item["uid"])
-
-                if all_instances:
+                if not all_instances:
                     return uids, True
 
         return uids, False
@@ -220,71 +236,67 @@ class Song:
         self,
         *,
         all_instances: bool = False,
-        uid: str | None = None,
-        song_id: str | None = None,
-        song_name: str | None = None,
+        uid: Optional[str] = None,
+        song_id: Optional[str] = None,
+        song_name: Optional[str] = None,
     ) -> None:
         """
         Removes a song from the playlist.
-        If all_instances is True, only song_name can be used.
+
+        Args:
+            all_instances (bool): Remove all instances of the song by name.
+            uid (Optional[str]): UID of the song to remove.
+            song_id (Optional[str]): Spotify track ID.
+            song_name (Optional[str]): Name of the song.
+
+        Raises:
+            ValueError: If playlist not set or invalid parameters.
+            SongError: If song not found or removal fails.
         """
         if song_id and "track" in song_id:
-            song_id = song_id.split("track:")[1]
+            song_id = song_id.split("track:")[-1]
 
         if not (song_id or song_name or uid):
-            raise ValueError("Must provide either song_id or song_name or uid")
-
+            raise ValueError("Must provide either song_id, song_name, or uid")
         if all_instances and song_id:
             raise ValueError("Cannot provide both song_id and all_instances")
-
         if not self.playlist or not hasattr(self.playlist, "playlist_id"):
             raise ValueError("Playlist not set")
 
-        playlist = PublicPlaylist(self.playlist.playlist_id).paginate_playlist()
-
+        playlist_gen = PublicPlaylist(self.playlist.playlist_id).paginate_playlist()
         uids: List[str] = []
-        if not uid:
-            for playlist_chunk in playlist:
-                items = playlist_chunk["items"]
-                extended_uids, stop = Song.parse_playlist_items(
-                    items,
-                    song_id=song_id,
-                    song_name=song_name,
-                    all_instances=all_instances,
-                )
-                uids.extend(extended_uids)
 
+        if not uid:
+            for chunk in playlist_gen:
+                items = chunk["items"]
+                found_uids, stop = Song.parse_playlist_items(
+                    items, song_id, song_name, all_instances
+                )
+                uids.extend(found_uids)
                 if stop:
-                    playlist.close()
                     break
         else:
             uids.append(uid)
 
-        if len(uids) == 0:
+        if not uids:
             raise SongError("Song not found in playlist")
 
         self._stage_remove_song(uids)
 
-    def like_song(self, song_id: str, /) -> None:
+    def like_song(self, song_id: str) -> None:
+        """
+        Likes a song (adds to library).
+
+        Args:
+            song_id (str): Spotify track ID.
+
+        Raises:
+            ValueError: If playlist is not set.
+            SongError: If request fails.
+        """
         if not self.playlist or not hasattr(self.playlist, "playlist_id"):
             raise ValueError("Playlist not set")
+        if "track" in song_id:
+            song_id = song_id.split("track:")[-1]
 
-        if song_id and "track" in song_id:
-            song_id = song_id.split("track:")[1]
-
-        url = "https://api-partner.spotify.com/pathfinder/v1/query"
-        payload = {
-            "variables": {"uris": [f"spotify:track:{song_id}"]},
-            "operationName": "addToLibrary",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.base.part_hash("addToLibrary"),
-                }
-            },
-        }
-
-        resp = self.base.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise SongError("Could not like song", error=resp.error.string)
+        self._send_post("addToLibrary", {"uris": [f"spotify:track:{song_id}"]})

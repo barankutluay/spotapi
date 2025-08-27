@@ -3,14 +3,15 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any
-from spotapi.login import Login
-from spotapi.user import User
+from collections.abc import Mapping
+from typing import Any, Generator, Mapping, Optional
+
 from spotapi.client import BaseClient
-from collections.abc import Mapping, Generator
-from spotapi.types.annotations import enforce
 from spotapi.exceptions import PlaylistError
 from spotapi.http.request import TLSClient
+from spotapi.login import Login
+from spotapi.spotapitypes.annotations import enforce
+from spotapi.user import User
 
 __all__ = ["PublicPlaylist", "PrivatePlaylist", "PlaylistError"]
 
@@ -18,20 +19,15 @@ __all__ = ["PublicPlaylist", "PrivatePlaylist", "PlaylistError"]
 @enforce
 class PublicPlaylist:
     """
-    Allows you to get all public information on a playlist.
-    No login is required.
+    Provides methods to fetch public playlist information without authentication.
 
-    Parameters
-    ----------
-    playlist (Optional[str]): The Spotify URI of the playlist.
-    client (TLSClient): An instance of TLSClient to use for requests.
+    Attributes:
+        base (BaseClient): Base client for HTTP requests.
+        playlist_id (str): Spotify playlist ID.
+        playlist_link (str): Full Spotify playlist URL.
     """
 
-    __slots__ = (
-        "base",
-        "playlist_id",
-        "playlist_link",
-    )
+    __slots__ = ("base", "playlist_id", "playlist_link")
 
     def __init__(
         self,
@@ -41,10 +37,12 @@ class PublicPlaylist:
         client: TLSClient = TLSClient("chrome_120", "", auto_retries=3),
     ) -> None:
         self.base = BaseClient(client=client)
-        self.playlist_id = (
-            playlist.split("playlist/")[-1] if "playlist" in playlist else playlist
-        )
+        self.playlist_id = self._extract_playlist_id(playlist)
         self.playlist_link = f"https://open.spotify.com/playlist/{self.playlist_id}"
+
+    @staticmethod
+    def _extract_playlist_id(uri: str) -> str:
+        return uri.split("playlist/")[-1] if "playlist" in uri else uri
 
     def get_playlist_info(
         self,
@@ -53,7 +51,20 @@ class PublicPlaylist:
         offset: int = 0,
         enable_watch_feed_entrypoint: bool = False,
     ) -> Mapping[str, Any]:
-        """Gets the public playlist information"""
+        """
+        Fetches playlist information from Spotify public API.
+
+        Args:
+            limit (int): Maximum number of tracks to fetch.
+            offset (int): Offset for pagination.
+            enable_watch_feed_entrypoint (bool): Feature flag for watch feed.
+
+        Returns:
+            Mapping[str, Any]: JSON response containing playlist data.
+
+        Raises:
+            PlaylistError: If request fails or invalid response is returned.
+        """
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
         params = {
             "operationName": "fetchPlaylist",
@@ -76,88 +87,75 @@ class PublicPlaylist:
         }
 
         resp = self.base.client.post(url, params=params, authenticate=True)
-
-        if resp.fail:
-            raise PlaylistError("Could not get playlist info", error=resp.error.string)
-
-        if not isinstance(resp.response, Mapping):
-            raise PlaylistError("Invalid JSON")
-
+        if resp.fail or not isinstance(resp.response, Mapping):
+            raise PlaylistError(
+                "Could not get playlist info", error=getattr(resp.error, "string", None)
+            )
         return resp.response
 
     def paginate_playlist(self) -> Generator[Mapping[str, Any], None, None]:
         """
-        Generator that fetches playlist information in chunks
+        Generator to fetch playlist tracks in chunks.
 
-        NOTE: If total_tracks <= 343, then there is no need to paginate.
+        Yields:
+            Mapping[str, Any]: Chunk of playlist tracks.
         """
-        UPPER_LIMIT: int = 343
-        # We need to get the total playlists first
-        playlist = self.get_playlist_info(limit=UPPER_LIMIT)
-        total_count: int = playlist["data"]["playlistV2"]["content"]["totalCount"]
+        UPPER_LIMIT = 343
+        playlist_data = self.get_playlist_info(limit=UPPER_LIMIT)
+        content = playlist_data["data"]["playlistV2"]["content"]
+        total_count = content["totalCount"]
 
-        yield playlist["data"]["playlistV2"]["content"]
-
-        if total_count <= UPPER_LIMIT:
-            return
-
+        yield content
         offset = UPPER_LIMIT
         while offset < total_count:
-            yield self.get_playlist_info(limit=UPPER_LIMIT, offset=offset)["data"][
+            chunk = self.get_playlist_info(limit=UPPER_LIMIT, offset=offset)["data"][
                 "playlistV2"
             ]["content"]
+            yield chunk
             offset += UPPER_LIMIT
 
 
+@enforce
 class PrivatePlaylist:
     """
-    Methods on playlists that you can only do whilst logged in.
+    Provides methods to manage private playlists for logged-in users.
 
-    Parameters
-    ----------
-    login (Login): The login object to use
-    playlist (Optional[str]): The Spotify URI of the playlist.
+    Attributes:
+        login (Login): Authenticated login instance.
+        user (User): User instance linked to the login.
+        base (BaseClient): Base client for HTTP requests.
+        playlist_id (str | None): Spotify playlist ID.
     """
 
-    __slots__ = (
-        "base",
-        "login",
-        "user",
-        "_playlist",
-        "playlist_id",
-    )
+    __slots__ = ("base", "login", "user", "_playlist", "playlist_id")
 
-    def __init__(
-        self,
-        login: Login,
-        playlist: str | None = None,
-    ) -> None:
+    def __init__(self, login: Login, playlist: Optional[str] = None) -> None:
         if not login.logged_in:
             raise ValueError("Must be logged in")
 
-        if playlist:
-            self.playlist_id = (
-                playlist.split("playlist/")[-1] if "playlist" in playlist else playlist
-            )
-
-        self.base = BaseClient(login.client)
         self.login = login
         self.user = User(login)
-        # We need to check if a user can use a method
-        self._playlist: bool = bool(playlist)
+        self.base = BaseClient(login.client)
+
+        self.playlist_id: Optional[str] = (
+            self._extract_playlist_id(playlist) if playlist else None
+        )
+        self._playlist = bool(playlist)
+
+    @staticmethod
+    def _extract_playlist_id(uri: str) -> str:
+        return uri.split("playlist/")[-1] if uri and "playlist" in uri else uri
 
     def set_playlist(self, playlist: str) -> None:
-        if "playlist:" in playlist:
-            playlist = playlist.split("playlist:")[-1]
-
-        if not playlist:
+        """Sets the active playlist for future operations."""
+        playlist_id = self._extract_playlist_id(playlist)
+        if not playlist_id:
             raise ValueError("Playlist not set")
-
-        setattr(self, "playlist_id", playlist)
+        self.playlist_id = playlist_id
         self._playlist = True
 
-    def add_to_library(self) -> None:
-        """Adds the playlist to your library"""
+    def _send_library_change(self, kind: int) -> None:
+        """Sends add/remove playlist requests to Spotify."""
         if not self._playlist:
             raise ValueError("Playlist not set")
 
@@ -167,8 +165,8 @@ class PrivatePlaylist:
                 {
                     "ops": [
                         {
-                            "kind": 2,
-                            "add": {
+                            "kind": kind,
+                            "add" if kind == 2 else "rem": {
                                 "items": [
                                     {
                                         "uri": f"spotify:playlist:{self.playlist_id}",
@@ -179,7 +177,8 @@ class PrivatePlaylist:
                                         },
                                     }
                                 ],
-                                "addFirst": True,
+                                "addFirst": True if kind == 2 else None,
+                                "itemsAsKey": True if kind == 3 else None,
                             },
                         }
                     ],
@@ -192,54 +191,38 @@ class PrivatePlaylist:
         }
 
         resp = self.login.client.post(url, json=payload, authenticate=True)
-
         if resp.fail:
+            action = "add" if kind == 2 else "remove"
             raise PlaylistError(
-                "Could not add playlist to library", error=resp.error.string
+                f"Could not {action} playlist to library",
+                error=getattr(resp.error, "string", None),
             )
+
+    def add_to_library(self) -> None:
+        """Adds the playlist to the user's library."""
+        self._send_library_change(kind=2)
 
     def remove_from_library(self) -> None:
-        """Removes the playlist from your library"""
-        if not self._playlist:
-            raise ValueError("Playlist not set")
-
-        url = f"https://spclient.wg.spotify.com/playlist/v2/user/{self.user.username}/rootlist/changes"
-        payload = {
-            "deltas": [
-                {
-                    "ops": [
-                        {
-                            "kind": 3,
-                            "rem": {
-                                "items": [
-                                    {"uri": f"spotify:playlist:{self.playlist_id}"}
-                                ],
-                                "itemsAsKey": True,
-                            },
-                        }
-                    ],
-                    "info": {"source": {"client": 5}},
-                }
-            ],
-            "wantResultingRevisions": False,
-            "wantSyncResult": False,
-            "nonces": [],
-        }
-
-        resp = self.login.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise PlaylistError(
-                "Could not remove playlist from library", error=resp.error.string
-            )
+        """Removes the playlist from the user's library."""
+        self._send_library_change(kind=3)
 
     def delete_playlist(self) -> None:
-        """Deletes the playlist from your library"""
-        # They are the same requests
-        return self.remove_from_library()
+        """Alias for remove_from_library."""
+        self.remove_from_library()
 
-    def get_library(self, limit: int = 50, /) -> Mapping[str, Any]:
-        """Gets all the playlists in your library"""
+    def get_library(self, limit: int = 50) -> Mapping[str, Any]:
+        """
+        Retrieves the user's library playlists.
+
+        Args:
+            limit (int): Max number of playlists to fetch.
+
+        Returns:
+            Mapping[str, Any]: Library JSON response.
+
+        Raises:
+            PlaylistError: If request fails.
+        """
         url = "https://api-partner.spotify.com/pathfinder/v1/query"
         params = {
             "operationName": "libraryV3",
@@ -268,13 +251,14 @@ class PrivatePlaylist:
         }
 
         resp = self.login.client.post(url, params=params, authenticate=True)
-
         if resp.fail:
-            raise PlaylistError("Could not get library", error=resp.error.string)
-
+            raise PlaylistError(
+                "Could not get library", error=getattr(resp.error, "string", None)
+            )
         return resp.response
 
     def _stage_create_playlist(self, name: str) -> str:
+        """Stages creation of a playlist and returns its Spotify URI."""
         url = "https://spclient.wg.spotify.com/playlist/v2/playlist"
         payload = {
             "ops": [
@@ -295,62 +279,47 @@ class PrivatePlaylist:
         }
 
         resp = self.login.client.post(url, json=payload, authenticate=True)
-
         if resp.fail:
             raise PlaylistError(
-                "Could not stage create playlist", error=resp.error.string
+                "Could not stage create playlist",
+                error=getattr(resp.error, "string", None),
             )
 
-        pattern = r"spotify:playlist:[a-zA-Z0-9]+"
-        matched = re.search(pattern, resp.response)
-
-        if not matched:
+        match = re.search(r"spotify:playlist:[a-zA-Z0-9]+", resp.response)
+        if not match:
             raise PlaylistError("Could not find desired playlist ID")
-
-        return matched.group(0)
+        return match.group(0)
 
     def create_playlist(self, name: str) -> str:
-        """Creates a new playlist"""
+        """
+        Creates a new playlist and adds it to the user's library.
+
+        Args:
+            name (str): Name of the new playlist.
+
+        Returns:
+            str: Spotify URI of the new playlist.
+        """
         playlist_id = self._stage_create_playlist(name)
-        url = f"https://spclient.wg.spotify.com/playlist/v2/user/{self.user.username}/rootlist/changes"
-        payload = {
-            "deltas": [
-                {
-                    "ops": [
-                        {
-                            "kind": 2,
-                            "add": {
-                                "items": [
-                                    {
-                                        "uri": playlist_id,
-                                        "attributes": {
-                                            "timestamp": int(time.time()),
-                                            "formatAttributes": [],
-                                            "availableSignals": [],
-                                        },
-                                    }
-                                ],
-                                "addFirst": True,
-                            },
-                        }
-                    ],
-                    "info": {"source": {"client": 5}},
-                }
-            ],
-            "wantResultingRevisions": False,
-            "wantSyncResult": False,
-            "nonces": [],
-        }
-
-        resp = self.login.client.post(url, json=payload, authenticate=True)
-
-        if resp.fail:
-            raise PlaylistError("Could not create playlist", error=resp.error.string)
-
+        self._send_library_change(kind=2)
         return playlist_id
 
     def recommended_songs(self, num_songs: int = 20) -> Mapping[str, Any]:
-        """Gets the recommended songs for the playlist"""
+        """
+        Retrieves recommended songs for the playlist.
+
+        Args:
+            num_songs (int): Number of songs to fetch.
+
+        Returns:
+            Mapping[str, Any]: JSON response of recommended songs.
+
+        Raises:
+            PlaylistError: If request fails.
+        """
+        if not self._playlist:
+            raise ValueError("Playlist not set")
+
         url = "https://spclient.wg.spotify.com/playlistextender/extendp/"
         payload = {
             "playlistURI": f"spotify:playlist:{self.playlist_id}",
@@ -358,10 +327,9 @@ class PrivatePlaylist:
             "numResults": num_songs,
         }
         resp = self.login.client.post(url, json=payload, authenticate=True)
-
         if resp.fail:
             raise PlaylistError(
-                "Could not get recommended songs", error=resp.error.string
+                "Could not get recommended songs",
+                error=getattr(resp.error, "string", None),
             )
-
         return resp.response
