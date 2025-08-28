@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import atexit
 import json
-from typing import Any, Callable, Dict, Type
+from typing import Any, Callable, Dict, Optional, Type
 
 import requests
 from tls_client import Session
@@ -119,8 +119,19 @@ class TLSClient(Session):
     ) -> None:
         super().__init__(client_identifier=profile, random_tls_extension_order=True)
 
+        self.proxies: Optional[Dict[str, str]] = None
+
         if proxy:
-            self.proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
+            if proxy.startswith(("http://", "https://", "socks5://", "socks5h://")):
+                proto = proxy.split("://")[0]
+            else:
+                proto = "http"
+                proxy = f"{proto}://{proxy}"
+
+            if proto in ("http", "https"):
+                self.proxies = {"http": proxy, "https": proxy}
+            elif proto.startswith("socks"):
+                self.proxies = {"http": proxy, "https": proxy}
 
         self.auto_retries = auto_retries + 1
         self.authenticate = auth_rule

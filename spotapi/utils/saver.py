@@ -114,8 +114,13 @@ class SqliteSaver(SaverProtocol):
             )
             """
         )
-        atexit.register(self.cursor.close)
-        atexit.register(self.conn.close)
+
+        atexit.register(
+            lambda: (
+                (self.cursor.close() if getattr(self, "cursor", None) else None),
+                (self.conn.close() if getattr(self, "conn", None) else None),
+            )
+        )
 
         self.rwlock = rwlock.RWLockFairD()
         self.rlock = self.rwlock.gen_rlock()

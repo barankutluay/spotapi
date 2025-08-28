@@ -4,7 +4,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Union
 
 from spotapi.http.request import TLSClient
-from spotapi.spotapitypes.interfaces import CaptchaProtocol, LoggerProtocol
+from spotapi.spotapitypes.interfaces import (
+    CaptchaProtocol,
+    LoggerProtocol,
+    SaverProtocol,
+)
 
 __all__ = [
     "Config",
@@ -31,6 +35,7 @@ __all__ = [
 class Config:
     logger: LoggerProtocol
     solver: CaptchaProtocol | None = field(default=None)
+    saver: SaverProtocol | None = field(default=None)
     client: TLSClient = field(default=TLSClient("chrome_120", "", auto_retries=3))
 
     def __str__(self) -> str:

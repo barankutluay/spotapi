@@ -12,7 +12,7 @@ from typing import (
     TypeVar,
 )
 
-from spotapi import Artist, Podcast, PublicAlbum, PublicPlaylist, Song
+import spotapi
 from spotapi.client import TLSClient
 
 T = TypeVar("T")
@@ -83,7 +83,7 @@ class Public:
             Mapping[str, Any]: Artist information in pages.
         """
         with ClientContext() as client:
-            artist = Artist(client=client)
+            artist = spotapi.Artist(client=client)
             yield from artist.paginate_artists(query)
 
     @staticmethod
@@ -97,7 +97,7 @@ class Public:
             Mapping[str, Any]: Album tracks in pages.
         """
         with ClientContext() as client:
-            album = PublicAlbum(album_id, client=client)
+            album = spotapi.PublicAlbum(album_id, client=client)
             yield from album.paginate_album()
 
     @staticmethod
@@ -111,7 +111,7 @@ class Public:
             Mapping[str, Any]: Playlist tracks in pages.
         """
         with ClientContext() as client:
-            playlist = PublicPlaylist(playlist_id, client=client)
+            playlist = spotapi.PublicPlaylist(playlist_id, client=client)
             yield from playlist.paginate_playlist()
 
     @staticmethod
@@ -125,7 +125,7 @@ class Public:
             Mapping[str, Any]: Song information in pages.
         """
         with ClientContext() as client:
-            song = Song(client=client)
+            song = spotapi.Song(client=client)
             yield from song.paginate_songs(query)
 
     @staticmethod
@@ -139,7 +139,7 @@ class Public:
             Mapping[str, Any]: Song details.
         """
         with ClientContext() as client:
-            song = Song(client=client)
+            song = spotapi.Song(client=client)
             return song.get_track_info(song_id)
 
     @staticmethod
@@ -153,7 +153,7 @@ class Public:
             Mapping[str, Any]: Podcast episodes in pages.
         """
         with ClientContext() as client:
-            podcast = Podcast(podcast_id, client=client)
+            podcast = spotapi.Podcast(podcast_id, client=client)
             yield from podcast.paginate_podcast()
 
     @staticmethod
@@ -167,5 +167,5 @@ class Public:
             Mapping[str, Any]: Episode details.
         """
         with ClientContext() as client:
-            podcast = Podcast(client=client)
+            podcast = spotapi.Podcast(client=client)
             return podcast.get_episode(episode_id)

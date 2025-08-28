@@ -13,8 +13,8 @@ from spotapi.podcast import *
 from spotapi.public import *
 from spotapi.solvers import *
 from spotapi.song import *
-from spotapi.status import *
 from spotapi.spotapitypes import *
+from spotapi.status import *
 from spotapi.user import *
 from spotapi.utils import *
 from spotapi.utils.logger import *

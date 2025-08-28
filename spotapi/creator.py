@@ -198,6 +198,7 @@ class Creator:
             2. Solve captcha using configured solver.
             3. Submit registration payload.
             4. Handle embedded challenges.
+            5. Save account data
 
         Raises:
             GeneratorError: If solver is not set or any step fails.
@@ -213,6 +214,18 @@ class Creator:
             "v3",
         )
         self._process_register(captcha_token)
+
+        if self.cfg.saver:
+            try:
+                account_data = {
+                    "identifier": self.email,
+                    "password": self.password,
+                    "cookies": self.client.cookies.get_dict(),
+                }
+                self.cfg.saver.save([account_data])
+                self.cfg.logger.info(f"Account {self.email} saved successfully.")
+            except Exception as e:
+                self.cfg.logger.error(f"Failed to save account {self.email}: {e}")
 
 
 class AccountChallenge:

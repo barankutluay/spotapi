@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 __description__ = "A sleek API wrapper for Spotify's private API"
 __install_require__ = [
