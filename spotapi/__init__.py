@@ -14,11 +14,11 @@ from spotapi.spotapi_exceptions import *
 from spotapi.spotapi_http import *
 from spotapi.spotapi_solvers import *
 from spotapi.spotapi_types import *
-from spotapi.status import *
-from spotapi.user import *
 from spotapi.spotapi_utils import *
 from spotapi.spotapi_utils.logger import *
 from spotapi.spotapi_utils.saver import *
+from spotapi.status import *
+from spotapi.user import *
 from spotapi.websocket import *
 
 __author__ = "Aran"

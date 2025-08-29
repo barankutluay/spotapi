@@ -4,8 +4,8 @@ from typing import Any, List, Mapping, Optional
 from spotapi.login import Login
 from spotapi.spotapi_exceptions.errors import FamilyError
 from spotapi.spotapi_types.annotations import enforce
-from spotapi.user import User
 from spotapi.spotapi_utils.strings import parse_json_string
+from spotapi.user import User
 
 __all__ = ["JoinFamily", "Family", "FamilyError"]
 

@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping as MappingABC
 from typing import Any, Mapping
 
-from spotapi import utils
 from spotapi.login import Login
 from spotapi.spotapi_exceptions import UserError
 from spotapi.spotapi_types.annotations import enforce
+from spotapi.spotapi_utils import random_nonce
 
 __all__ = ["User", "UserError"]
 
@@ -153,7 +153,7 @@ class User:
                 "country": profile_dump["country"],
             },
             "recaptcha_token": captcha_response,
-            "client_nonce": utils.random_nonce(),
+            "client_nonce": random_nonce(),
             "callback_url": "https://www.spotify.com/account/profile/challenge",
             "client_info": {"locale": "en_US", "capabilities": [1]},
         }

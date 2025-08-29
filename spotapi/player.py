@@ -7,8 +7,8 @@ from spotapi.playlist import PublicPlaylist
 from spotapi.song import Song
 from spotapi.spotapi_exceptions import PlayerError
 from spotapi.spotapi_types.annotations import enforce
-from spotapi.status import PlayerStatus
 from spotapi.spotapi_utils import random_hex_string
+from spotapi.status import PlayerStatus
 
 __all__ = ["Player", "PlayerStatus", "PlayerError"]
 
