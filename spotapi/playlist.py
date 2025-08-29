@@ -7,10 +7,10 @@ from collections.abc import Mapping
 from typing import Any, Generator, Mapping, Optional
 
 from spotapi.client import BaseClient
-from spotapi.exceptions import PlaylistError
-from spotapi.http.request import TLSClient
 from spotapi.login import Login
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions import PlaylistError
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types.annotations import enforce
 from spotapi.user import User
 
 __all__ = ["PublicPlaylist", "PrivatePlaylist", "PlaylistError"]

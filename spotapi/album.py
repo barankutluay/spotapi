@@ -5,9 +5,9 @@ from collections.abc import Mapping
 from typing import Any, Generator
 
 from spotapi.client import BaseClient
-from spotapi.exceptions import AlbumError
-from spotapi.http.request import TLSClient
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions import AlbumError
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types.annotations import enforce
 
 __all__ = ["PublicAlbum", "AlbumError"]
 

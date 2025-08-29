@@ -5,9 +5,9 @@ from collections.abc import Generator, Mapping
 from typing import Any
 
 from spotapi.client import BaseClient
-from spotapi.exceptions import PodcastError
-from spotapi.http.request import TLSClient
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions import PodcastError
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types.annotations import enforce
 
 __all__ = ["Podcast", "PodcastError"]
 

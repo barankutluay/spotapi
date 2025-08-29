@@ -2,13 +2,13 @@ import time
 import uuid
 from typing import List
 
-from spotapi.exceptions import PlayerError
 from spotapi.login import Login
 from spotapi.playlist import PublicPlaylist
 from spotapi.song import Song
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions import PlayerError
+from spotapi.spotapi_types.annotations import enforce
 from spotapi.status import PlayerStatus
-from spotapi.utils import random_hex_string
+from spotapi.spotapi_utils import random_hex_string
 
 __all__ = ["Player", "PlayerStatus", "PlayerError"]
 
@@ -27,7 +27,7 @@ class Player(PlayerStatus):
         r_state: Cached player state.
     """
 
-    __slots__ = ("active_id", "device_id", "r_state", "_transfered")
+    __slots__ = ("active_id", "device_id", "r_state", "_transferred")
 
     def __init__(self, login: Login, device_id: str | None = None) -> None:
         """
@@ -103,7 +103,7 @@ class Player(PlayerStatus):
         resp = self.client.post(url, json=payload, authenticate=True)
         if resp.fail:
             raise PlayerError("Could not transfer player", error=resp.error.string)
-        self._transfered = True
+        self._transferred = True
 
     def run_command(self, command: str) -> None:
         """Sends a generic command to the active player."""

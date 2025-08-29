@@ -2,10 +2,10 @@ import json
 from typing import Any, Generator, Iterable, List, Mapping, Optional, Tuple
 
 from spotapi.client import BaseClient
-from spotapi.exceptions import SongError
-from spotapi.http.request import TLSClient
 from spotapi.playlist import PrivatePlaylist, PublicPlaylist
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions import SongError
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types.annotations import enforce
 
 __all__ = ["Song", "SongError"]
 

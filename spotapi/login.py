@@ -5,10 +5,10 @@ from collections.abc import Mapping
 from typing import Any, Optional
 from urllib.parse import quote, urlencode
 
-from spotapi.exceptions import LoginError
-from spotapi.spotapitypes import Config, SaverProtocol
-from spotapi.spotapitypes.annotations import enforce
-from spotapi.utils.strings import parse_json_string
+from spotapi.spotapi_exceptions import LoginError
+from spotapi.spotapi_types import Config, SaverProtocol
+from spotapi.spotapi_types.annotations import enforce
+from spotapi.spotapi_utils.strings import parse_json_string
 
 __all__ = ["Login", "LoginChallenge", "LoginError"]
 

@@ -3,11 +3,11 @@ import time
 import uuid
 from typing import Any, Dict, Optional
 
-from spotapi.exceptions import GeneratorError
-from spotapi.http.request import TLSClient
-from spotapi.spotapitypes import Config
-from spotapi.spotapitypes.annotations import enforce
-from spotapi.utils.strings import (
+from spotapi.spotapi_exceptions import GeneratorError
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types import Config
+from spotapi.spotapi_types.annotations import enforce
+from spotapi.spotapi_utils.strings import (
     parse_json_string,
     random_dob,
     random_email,

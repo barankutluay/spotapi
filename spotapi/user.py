@@ -4,9 +4,9 @@ from collections.abc import Mapping as MappingABC
 from typing import Any, Mapping
 
 from spotapi import utils
-from spotapi.exceptions import UserError
 from spotapi.login import Login
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions import UserError
+from spotapi.spotapi_types.annotations import enforce
 
 __all__ = ["User", "UserError"]
 

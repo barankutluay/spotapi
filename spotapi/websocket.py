@@ -10,10 +10,10 @@ from typing import Any, Dict
 from websockets.sync.client import connect
 
 from spotapi.client import BaseClient
-from spotapi.exceptions import WebSocketError
 from spotapi.login import Login
-from spotapi.spotapitypes.annotations import enforce
-from spotapi.utils.strings import random_hex_string
+from spotapi.spotapi_exceptions import WebSocketError
+from spotapi.spotapi_types.annotations import enforce
+from spotapi.spotapi_utils.strings import random_hex_string
 
 __all__ = ["WebsocketStreamer", "WebSocketError"]
 

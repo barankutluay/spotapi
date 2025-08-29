@@ -5,10 +5,10 @@ from collections.abc import Mapping
 from typing import Any, Generator, Literal, Optional
 
 from spotapi.client import BaseClient
-from spotapi.exceptions import ArtistError
-from spotapi.http.request import TLSClient
 from spotapi.login import Login
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions import ArtistError
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types.annotations import enforce
 
 __all__ = ["Artist", "ArtistError"]
 

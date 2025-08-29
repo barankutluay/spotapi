@@ -6,7 +6,7 @@ from typing import Any
 
 from colorama import Fore, Style, init
 
-from spotapi.spotapitypes import LoggerProtocol
+from spotapi.spotapi_types import LoggerProtocol
 
 __all__ = ["Logger", "NoopLogger", "LoggerProtocol"]
 

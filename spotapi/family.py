@@ -1,11 +1,11 @@
 import uuid
 from typing import Any, List, Mapping, Optional
 
-from spotapi.exceptions.errors import FamilyError
 from spotapi.login import Login
-from spotapi.spotapitypes.annotations import enforce
+from spotapi.spotapi_exceptions.errors import FamilyError
+from spotapi.spotapi_types.annotations import enforce
 from spotapi.user import User
-from spotapi.utils.strings import parse_json_string
+from spotapi.spotapi_utils.strings import parse_json_string
 
 __all__ = ["JoinFamily", "Family", "FamilyError"]
 

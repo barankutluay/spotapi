@@ -3,8 +3,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Literal
 
-from spotapi.exceptions import CaptchaException, SolverError
-from spotapi.http.request import StdClient
+from spotapi.spotapi_exceptions import CaptchaException, SolverError
+from spotapi.spotapi_http.request import StdClient
 
 __all__ = ["Capsolver", "CaptchaException", "SolverError"]
 

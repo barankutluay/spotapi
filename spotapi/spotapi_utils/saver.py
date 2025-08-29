@@ -14,8 +14,8 @@ import pymongo
 import redis
 from readerwriterlock import rwlock
 
-from spotapi.exceptions import SaverError
-from spotapi.spotapitypes.interfaces import SaverProtocol
+from spotapi.spotapi_exceptions import SaverError
+from spotapi.spotapi_types.interfaces import SaverProtocol
 
 __all__ = ["JSONSaver", "MongoSaver", "RedisSaver", "SqliteSaver", "SaverProtocol"]
 

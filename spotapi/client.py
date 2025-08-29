@@ -7,11 +7,11 @@ from typing import Mapping, Optional, Tuple
 import pyotp
 import requests
 
-from spotapi.exceptions import BaseClientError
-from spotapi.http.request import TLSClient
-from spotapi.spotapitypes.alias import _Undefined, _UStr
-from spotapi.spotapitypes.annotations import enforce
-from spotapi.utils.logger import Logger
+from spotapi.spotapi_exceptions import BaseClientError
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types.alias import _Undefined, _UStr
+from spotapi.spotapi_types.annotations import enforce
+from spotapi.spotapi_utils.logger import Logger
 
 # Fallback hardcoded secret (version 18)
 _FALLBACK_SECRET: Tuple[int, bytearray] = (

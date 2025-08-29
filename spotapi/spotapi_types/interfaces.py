@@ -4,7 +4,7 @@ from typing import Any, List, Literal, Mapping, Protocol
 
 from typing_extensions import runtime_checkable
 
-from spotapi.http.request import StdClient
+from spotapi.spotapi_http.request import StdClient
 
 __all__ = ["CaptchaProtocol", "LoggerProtocol", "SaverProtocol"]
 

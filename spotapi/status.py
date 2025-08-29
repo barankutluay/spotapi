@@ -3,8 +3,8 @@ import threading
 from typing import Any, Callable, Dict, List, Optional, ParamSpec, TypeVar
 
 from spotapi.login import Login
-from spotapi.spotapitypes.annotations import enforce
-from spotapi.spotapitypes.data import Devices, PlayerState, Track
+from spotapi.spotapi_types.annotations import enforce
+from spotapi.spotapi_types.data import Devices, PlayerState, Track
 from spotapi.websocket import WebsocketStreamer
 
 __all__ = [

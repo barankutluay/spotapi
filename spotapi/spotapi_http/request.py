@@ -10,8 +10,8 @@ from tls_client.exceptions import TLSClientExeption
 from tls_client.response import Response as TLSResponse
 from tls_client.settings import ClientIdentifiers
 
-from spotapi.exceptions import ParentException, RequestError
-from spotapi.http.data import Response
+from spotapi.spotapi_exceptions import ParentException, RequestError
+from spotapi.spotapi_http.data import Response
 
 __all__ = [
     "StdClient",

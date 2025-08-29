@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Union
 
-from spotapi.http.request import TLSClient
-from spotapi.spotapitypes.interfaces import (
+from spotapi.spotapi_http.request import TLSClient
+from spotapi.spotapi_types.interfaces import (
     CaptchaProtocol,
     LoggerProtocol,
     SaverProtocol,
