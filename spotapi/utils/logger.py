@@ -13,6 +13,7 @@ __all__ = ["Logger", "NoopLogger", "LoggerProtocol"]
 # Enable colorama for Windows
 if os.name == "nt":
     os.system("")
+
 init(autoreset=True)
 
 LOCK = Lock()
@@ -22,10 +23,11 @@ class Logger(LoggerProtocol):
     """A simple thread-safe stdout logger with color formatting."""
 
     LEVEL_COLORS = {
+        "fatal": Fore.LIGHTBLACK_EX,
         "error": Fore.LIGHTRED_EX,
-        "fatal": Fore.LIGHTRED_EX,
-        "attempt": Fore.LIGHTYELLOW_EX,
-        "info": Fore.LIGHTMAGENTA_EX,
+        "warn": Fore.LIGHTYELLOW_EX,
+        "attempt": Fore.LIGHTMAGENTA_EX,
+        "info": Fore.LIGHTGREEN_EX,
     }
 
     @staticmethod
@@ -46,8 +48,18 @@ class Logger(LoggerProtocol):
             )
 
     @staticmethod
+    def fatal(s: str, **extra: Any) -> None:
+        Logger._log("fatal", s, **extra)
+        time.sleep(5)
+        os._exit(1)
+
+    @staticmethod
     def error(s: str, **extra: Any) -> None:
         Logger._log("error", s, **extra)
+
+    @staticmethod
+    def warn(s: str, **extra: Any) -> None:
+        Logger._log("warn", s, **extra)
 
     @staticmethod
     def attempt(s: str, **extra: Any) -> None:
@@ -56,12 +68,6 @@ class Logger(LoggerProtocol):
     @staticmethod
     def info(s: str, **extra: Any) -> None:
         Logger._log("info", s, **extra)
-
-    @staticmethod
-    def fatal(s: str, **extra: Any) -> None:
-        Logger._log("fatal", s, **extra)
-        time.sleep(5)
-        os._exit(1)
 
 
 class NoopLogger(LoggerProtocol):
