@@ -1,14 +1,12 @@
-Integration flow: Creator.register() executed successfully.
-
 ### Creator Defaults
 
 | Metric | Value |
 |--------|-------|
-| Email | oiocxVopud@msn.com |
+| Email | qaWVdtbPkN@live.com |
 | Password length | 12 |
-| Display Name | YNNwhreyyL |
-| Birthdate | 1957-12-16 |
-| Submission ID | e88b64f2-438d-4120-b9e6-afc85ceeb66f |
+| Display Name | TIxlhcBtVe |
+| Birthdate | 1973-08-03 |
+| Submission ID | 45db180b-deed-4da7-9f2e-20ea796855f7 |
 
 ### Session Tokens
 
@@ -35,17 +33,39 @@ Session retrieval failed as expected.
 
 Challenge handled successfully.
 
-Register failed as solver is missing.
+_process_register success path executed.
 
-Register full flow executed successfully.
+_post_request success path executed.
 
 _post_request failure raised GeneratorError as expected.
 
-Account challenge defeated successfully.
+Creator.register() called saver.save() as expected (branch true).
+
+Creator.register() skipped saver.save() as expected (branch false).
+
+Creator.register raised GeneratorError due to missing solver as expected.
+
+Register full flow executed successfully.
+
+Register save success triggered logger.info as expected.
+
+Register save error triggered logger.error as expected.
+
+AccountChallenge._get_session success executed.
+
+_get_session failure raised GeneratorError as expected.
 
 _submit_challenge failure raised GeneratorError as expected.
 
+_submit_challenge success path executed without exception.
+
 _complete_challenge failure raised GeneratorError as expected.
 
-Register save error triggered logger.error as expected.
+_complete_challenge failure path raised GeneratorError as expected.
+
+AccountChallenge.defeat_challenge raised GeneratorError due to missing solver as expected.
+
+Account challenge defeated successfully.
+
+_complete_challenge executed successfully without exceptions.
 

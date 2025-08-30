@@ -3,6 +3,7 @@ certifi==2025.8.3
 charset-normalizer==3.4.3
 click==8.2.1
 colorama==0.4.6
+coverage==7.10.6
 dnspython==2.7.0
 idna==3.10
 iniconfig==2.1.0
@@ -19,12 +20,13 @@ Pygments==2.19.2
 pymongo==4.14.1
 pyotp==2.9.0
 pytest==8.4.1
+pytest-cov==6.2.1
 python-dotenv==1.1.1
 readerwriterlock==1.0.9
 redis==6.4.0
 requests==2.31.0
 rich==14.1.0
--e git+https://github.com/barankutluay/spotapi.git@6db3893b58918bd38dd78c01cb1ba1c1754f5c78#egg=spotapi
+-e git+https://github.com/barankutluay/spotapi.git@f3847209487e8a0bae369a503bdbd770a2be64ac#egg=spotapi
 tls-client==1.0
 typing_extensions==4.12.2
 urllib3==2.5.0
