@@ -1,9 +1,7 @@
-import json
-import logging
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, Generator
+from typing import Any, Dict
 from unittest.mock import MagicMock
 
 import pytest
@@ -51,12 +49,13 @@ def log_message(msg: str) -> None:
 # Fixtures
 # --------------------------------------------------------------------------------------
 @pytest.fixture
-def mock_cfg() -> Generator[MagicMock, None, None]:
+def mock_cfg() -> MagicMock:
     client = MagicMock()
     solver = MagicMock()
     saver = MagicMock()
     logger = MagicMock()
-    yield MagicMock(client=client, solver=solver, saver=saver, logger=logger)
+    cfg = MagicMock(client=client, solver=solver, saver=saver, logger=logger)
+    return cfg
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -68,7 +67,7 @@ def clear_report():
 
 
 # --------------------------------------------------------------------------------------
-# Integration Tests
+# Unit Tests: Login
 # --------------------------------------------------------------------------------------
 def test_login_integration_flow(mock_cfg: MagicMock) -> None:
     mock_get_resp = SimpleNamespace(
@@ -103,9 +102,6 @@ def test_login_integration_flow(mock_cfg: MagicMock) -> None:
     log_message("Integration flow: Login.login() executed successfully.")
 
 
-# --------------------------------------------------------------------------------------
-# Unit Tests
-# --------------------------------------------------------------------------------------
 def test_login_initialization(mock_cfg: MagicMock) -> None:
     login = Login(mock_cfg, password="password123", email="user@example.com")
     log_table(
@@ -145,6 +141,47 @@ def test_login_from_saver_calls_load_and_from_cookies(mock_cfg: MagicMock) -> No
     log_message("Login from_saver loaded successfully.")
     assert instance.logged_in
     mock_saver.load.assert_called_once_with(query={"identifier": "user@example.com"})
+
+
+def test_from_cookies_parses_cookie_with_equal_sign(mock_cfg):
+    cookie_str = "foo=bar; baz=qux"
+    dump = {"identifier": "user@example.com", "password": "pass", "cookies": cookie_str}
+    parsed = {}
+    for cookie in cookie_str.split(";"):
+        if "=" in cookie:
+            k, v = cookie.split("=", 1)
+            parsed[k.strip()] = v.strip()
+    assert parsed == {"foo": "bar", "baz": "qux"}
+
+
+def test_login_raises_if_solver_none(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.solver = None
+
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=False,
+        response='{"flowCtx":"flow123"}',
+        raw=SimpleNamespace(cookies=SimpleNamespace(get=lambda k: "csrf")),
+    )
+
+    with pytest.raises(LoginError) as exc:
+        login.login()
+    assert "Solver not set" in str(exc.value)
+
+
+def test_login_challenge_submit_fail_resp_fail(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.solver.solve_captcha.return_value = "tok"
+    challenge = LoginChallenge(
+        login, {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
+    )
+    challenge.session_id = "sess"
+    mock_cfg.client.post.return_value = SimpleNamespace(
+        fail=True, error=SimpleNamespace(string="fail")
+    )
+    with pytest.raises(LoginError) as exc:
+        challenge._submit_challenge()
+    assert "Could not submit challenge" in str(exc.value)
 
 
 def test_password_payload_and_submit_password(mock_cfg: MagicMock) -> None:
@@ -200,20 +237,186 @@ def test_login_full_flow(mock_cfg: MagicMock) -> None:
     assert login.logged_in
 
 
+def test_login_init_without_identifier_raises(mock_cfg):
+    with pytest.raises(ValueError):
+        Login(mock_cfg, password="pass")
+
+
+def test_login_save_raises_if_not_logged_in(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    with pytest.raises(ValueError):
+        login.save(mock_cfg.saver)
+
+
+def test_login_save_success_when_logged_in(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.logged_in = True
+    mock_cfg.client.cookies.get_dict.return_value = {"cookie": "val"}
+    login.save(mock_cfg.saver)
+    mock_cfg.saver.save.assert_called_once()
+
+
+def test_login_from_cookies_invalid_format_raises(mock_cfg):
+    with pytest.raises(ValueError):
+        Login.from_cookies({"cookies": "not_valid"}, mock_cfg)
+
+
+def test_repr_and_str_methods(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    assert "user@example.com" in repr(login)
+    assert "user@example.com" in str(login)
+
+
+def test_get_add_cookie_raises_on_fail(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=True, error=SimpleNamespace(string="fail")
+    )
+    with pytest.raises(LoginError):
+        login._get_add_cookie("http://bad.url")
+
+
+def test_set_non_otc_raises_on_fail(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=True, error=SimpleNamespace(string="fail")
+    )
+    with pytest.raises(LoginError):
+        login._set_non_otc()
+
+
+def test_get_session_raises_on_fail(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=True, error=SimpleNamespace(string="fail")
+    )
+    with pytest.raises(LoginError):
+        login._get_session()
+
+
+def test_submit_password_raises_on_fail(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.csrf_token = "csrf"
+    mock_cfg.client.post.return_value = SimpleNamespace(
+        fail=True, error=SimpleNamespace(string="fail")
+    )
+    with pytest.raises(LoginError):
+        login._submit_password("tok")
+
+
+def test_handle_login_error_redirect_required_triggers_challenge(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    dump = {
+        "result": "redirect_required",
+        "data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"},
+    }
+    original_defeat = LoginChallenge.defeat
+    LoginChallenge.defeat = lambda self: setattr(
+        self, "interaction_hash", "h"
+    ) or setattr(self, "interaction_reference", "r")
+    login.handle_login_error(dump)
+    mock_cfg.logger.attempt.assert_called_once()
+    LoginChallenge.defeat = original_defeat
+
+
+def test_handle_login_error_unexpected_format_raises(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    with pytest.raises(LoginError):
+        login.handle_login_error({"foo": "bar"})
+
+
+def test_handle_login_error_error_unknown(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    with pytest.raises(LoginError):
+        login.handle_login_error({"error": "errorUnknown"})
+
+
+def test_handle_login_error_unforeseen(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    with pytest.raises(LoginError):
+        login.handle_login_error({"error": "other"})
+
+
+def test_login_raises_if_already_logged_in(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.logged_in = True
+    with pytest.raises(LoginError):
+        login.login()
+
+
+def test_login_raises_if_captcha_not_solved(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=False,
+        response='{"flowCtx":"fid"}',
+        raw=SimpleNamespace(cookies=SimpleNamespace(get=lambda k: "csrf")),
+    )
+    login.solver.solve_captcha.return_value = None
+    with pytest.raises(LoginError):
+        login.login()
+
+
+def test_from_cookies_ignores_invalid_cookies(mock_cfg):
+    dump = {
+        "identifier": "user@example.com",
+        "password": "pass",
+        "cookies": "foo=bar; invalidcookie; baz=qux",
+    }
+
+    instance = Login.from_cookies(dump, mock_cfg)
+
+    calls = mock_cfg.client.cookies.set.call_args_list
+    called_cookies = {call.args[0]: call.args[1] for call in calls}
+
+    expected = {"foo": "bar", "baz": "qux"}
+    assert called_cookies == expected
+    assert instance.logged_in
+
+
+def test_solver_exception_wraps_login_error(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+
+    def raise_exc(*args, **kwargs):
+        raise Exception("Solver failure")
+
+    login.solver.solve_captcha.side_effect = raise_exc
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=False,
+        response='{"flowCtx":"flow123"}',
+        raw=SimpleNamespace(cookies=SimpleNamespace(get=lambda k: "csrf")),
+    )
+
+    with pytest.raises(Exception) as e:
+        login.login()
+    assert "Solver failure" in str(e.value)
+
+
+def test_from_cookies_with_missing_fields_raises(mock_cfg):
+    with pytest.raises(ValueError):
+        Login.from_cookies({"identifier": "id_only"}, mock_cfg)
+
+
+def test_password_payload_encoding(mock_cfg):
+    login = Login(mock_cfg, password="pass&123", email="user@example.com")
+    login.flow_id = "flow&123"
+    payload = login._password_payload("tok&123")
+    assert "pass%26123" in payload
+    assert "tok%26123" in payload
+
+
 # --------------------------------------------------------------------------------------
-# LoginChallenge Tests
+# Unit Tests: LoginChallenge
 # --------------------------------------------------------------------------------------
 def test_challenge_payload_submission(mock_cfg: MagicMock) -> None:
     login = Login(mock_cfg, password="pass", email="user@example.com")
     dump = {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
     challenge = LoginChallenge(login, dump)
     login.solver.solve_captcha.return_value = "token123"
-    resp = SimpleNamespace(
+    mock_cfg.client.post.return_value = SimpleNamespace(
         fail=False,
         response={"completed": {"hash": "h", "interaction_reference": "r"}},
         raw=None,
     )
-    mock_cfg.client.post.return_value = resp
     challenge._submit_challenge()
     log_message("_submit_challenge executed successfully.")
 
@@ -222,14 +425,74 @@ def test_challenge_defeat_calls_all_steps(mock_cfg: MagicMock) -> None:
     login = Login(mock_cfg, password="pass", email="user@example.com")
     dump = {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
     challenge = LoginChallenge(login, dump)
-    mock_post_resp = SimpleNamespace(
+
+    login.solver.solve_captcha.return_value = "tok"
+
+    mock_cfg.client.get.side_effect = lambda *args, **kwargs: SimpleNamespace(
+        fail=False, response={}, raw=None
+    )
+    mock_cfg.client.post.side_effect = lambda *args, **kwargs: SimpleNamespace(
         fail=False,
         response={"completed": {"hash": "h", "interaction_reference": "r"}},
         raw=None,
     )
-    mock_cfg.client.get.return_value.fail = False
-    mock_cfg.client.post.return_value = mock_post_resp
+
     challenge.defeat()
+
     assert challenge.interaction_hash == "h"
     assert challenge.interaction_reference == "r"
-    log_message("LoginChallenge.defeat executed successfully.")
+
+
+def test_challenge_get_challenge_fail(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    dump = {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
+    challenge = LoginChallenge(login, dump)
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=True, error=SimpleNamespace(string="fail")
+    )
+    with pytest.raises(LoginError):
+        challenge._get_challenge()
+
+
+def test_challenge_construct_payload_solver_none(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.solver = None
+    dump = {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
+    challenge = LoginChallenge(login, dump)
+    with pytest.raises(LoginError):
+        challenge._construct_challenge_payload()
+
+
+def test_challenge_construct_payload_captcha_fails(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.solver.solve_captcha.return_value = None
+    dump = {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
+    challenge = LoginChallenge(login, dump)
+    with pytest.raises(LoginError):
+        challenge._construct_challenge_payload()
+
+
+def test_challenge_submit_invalid_json_response(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    login.solver.solve_captcha.return_value = "tok"
+    dump = {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
+    challenge = LoginChallenge(login, dump)
+    mock_cfg.client.post.return_value = SimpleNamespace(
+        fail=False, response="not_mapping"
+    )
+    with pytest.raises(LoginError):
+        challenge._submit_challenge()
+
+
+def test_challenge_complete_fail(mock_cfg):
+    login = Login(mock_cfg, password="pass", email="user@example.com")
+    dump = {"data": {"redirect_url": "https://challenge.spotify.com/c/sess/chal/"}}
+    challenge = LoginChallenge(login, dump)
+    challenge.session_id = "sess"
+    challenge.interaction_reference = "ref"
+    challenge.interaction_hash = "hash"
+    mock_cfg.client.get.return_value = SimpleNamespace(
+        fail=True, error=SimpleNamespace(string="fail")
+    )
+    with pytest.raises(LoginError):
+        challenge._complete_challenge()

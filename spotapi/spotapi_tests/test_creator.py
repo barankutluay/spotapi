@@ -1,4 +1,3 @@
-import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, Generator
@@ -65,27 +64,24 @@ def clear_report():
 
 
 # --------------------------------------------------------------------------------------
-# Unit Tests
+# Unit Tests: Creator
 # --------------------------------------------------------------------------------------
-def test_creator_initialization_defaults(
-    mock_cfg: MagicMock, caplog: pytest.LogCaptureFixture
-) -> None:
-    with caplog.at_level(logging.INFO):
-        creator = Creator(mock_cfg)
-        log_table(
-            "Creator Defaults",
-            {
-                "Email": creator.email,
-                "Password length": len(creator.password),
-                "Display Name": creator.display_name,
-                "Birthdate": creator.birthdate,
-                "Submission ID": creator.submission_id,
-            },
-        )
-        assert "@" in creator.email
-        assert len(creator.password) >= 10
-        assert creator.display_name
-        assert len(creator.birthdate.split("-")) == 3
+def test_creator_initialization_defaults(mock_cfg: MagicMock) -> None:
+    creator = Creator(mock_cfg)
+    log_table(
+        "Creator Defaults",
+        {
+            "Email": creator.email,
+            "Password length": len(creator.password),
+            "Display Name": creator.display_name,
+            "Birthdate": creator.birthdate,
+            "Submission ID": creator.submission_id,
+        },
+    )
+    assert "@" in creator.email
+    assert len(creator.password) >= 10
+    assert creator.display_name
+    assert len(creator.birthdate.split("-")) == 3
 
 
 def test_get_session_success(mock_cfg: MagicMock) -> None:
@@ -273,7 +269,7 @@ def test_register_save_error_logs(mock_cfg: MagicMock) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# AccountChallenge Tests
+# Unit Tests: AccountChallenge
 # --------------------------------------------------------------------------------------
 def test_account_challenge_get_session_success(mock_cfg: MagicMock) -> None:
     raw_response = {"session_id": "sess123"}

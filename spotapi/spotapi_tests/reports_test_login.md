@@ -26,5 +26,3 @@ Full login flow executed successfully.
 
 _submit_challenge executed successfully.
 
-LoginChallenge.defeat executed successfully.
-

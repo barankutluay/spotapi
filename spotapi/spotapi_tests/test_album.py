@@ -62,7 +62,7 @@ def clear_report():
 
 
 # --------------------------------------------------------------------------------------
-# Integration Test
+# Unit Tests
 # --------------------------------------------------------------------------------------
 def test_album_integration_flow() -> None:
     mock_tls_client = MagicMock()
@@ -96,9 +96,6 @@ def test_album_integration_flow() -> None:
     assert len(batches[0]) == 10
 
 
-# --------------------------------------------------------------------------------------
-# Unit Tests
-# --------------------------------------------------------------------------------------
 def test_public_album_initialization(mock_client: MagicMock) -> None:
     album = PublicAlbum("testid", client=mock_client)
     log_table(
