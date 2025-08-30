@@ -1,69 +1,11 @@
-import re
-from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict
 from unittest.mock import MagicMock
 
 import pytest
+from helpers import log_message, log_table
 from requests.cookies import RequestsCookieJar
-from rich.console import Console
-from rich.table import Table
 
 from login import Login, LoginChallenge, LoginError
-
-# --------------------------------------------------------------------------------------
-# Rich Console & Markdown Report
-# --------------------------------------------------------------------------------------
-console: Console = Console(record=True)
-REPORT_PATH: Path = Path(f"./spotapi_tests/reports/reports_{Path(__file__).stem}.md")
-REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-
-def save_report() -> None:
-    console.save_text(str(REPORT_PATH))
-
-
-def log_table(title: str, data: Dict[str, Any]) -> None:
-    table: Table = Table(title=title)
-    table.add_column("Metric", style="cyan", justify="left")
-    table.add_column("Value", style="magenta", justify="right")
-    for k, v in data.items():
-        table.add_row(str(k), str(v))
-    console.print(table)
-    with REPORT_PATH.open("a", encoding="utf-8") as f:
-        f.write(f"### {title}\n\n")
-        f.write("| Metric | Value |\n|--------|-------|\n")
-        for k, v in data.items():
-            f.write(f"| {k} | {v} |\n")
-        f.write("\n")
-
-
-def log_message(msg: str) -> None:
-    console.print(msg)
-    with REPORT_PATH.open("a", encoding="utf-8") as f:
-        clean: str = re.sub(r"\[.*?\]", "", msg)
-        f.write(f"{clean}\n\n")
-
-
-# --------------------------------------------------------------------------------------
-# Fixtures
-# --------------------------------------------------------------------------------------
-@pytest.fixture
-def mock_cfg() -> MagicMock:
-    client = MagicMock()
-    solver = MagicMock()
-    saver = MagicMock()
-    logger = MagicMock()
-    cfg = MagicMock(client=client, solver=solver, saver=saver, logger=logger)
-    return cfg
-
-
-@pytest.fixture(scope="session", autouse=True)
-def clear_report():
-    if REPORT_PATH.exists():
-        REPORT_PATH.unlink()
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    yield
 
 
 # --------------------------------------------------------------------------------------

@@ -26,7 +26,7 @@ readerwriterlock==1.0.9
 redis==6.4.0
 requests==2.31.0
 rich==14.1.0
--e git+https://github.com/barankutluay/spotapi.git@c31ead6d87a8aad877b7bc1f6216dc751b096317#egg=spotapi
+-e git+https://github.com/barankutluay/spotapi.git@f88c37f588ed465c73c6a439e4d9e251b8b84d69#egg=spotapi
 tls-client==1.0
 typing_extensions==4.12.2
 urllib3==2.5.0
