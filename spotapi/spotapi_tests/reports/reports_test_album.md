@@ -1,11 +1,3 @@
-### Integration Album Info
-
-| Metric | Value |
-|--------|-------|
-| Tracks Count | 10 |
-
-Integration pagination yielded 1 batch(es).
-
 ### Album Initialization
 
 | Metric | Value |
@@ -33,6 +25,14 @@ _validate_response raised AlbumError for invalid response.
 | Tracks Count | 0 |
 
 get_album_info raised AlbumError on failure response.
+
+### Integration Album Info
+
+| Metric | Value |
+|--------|-------|
+| Tracks Count | 10 |
+
+Integration pagination yielded 1 batch(es).
 
 ### Paginate Album Batches
 

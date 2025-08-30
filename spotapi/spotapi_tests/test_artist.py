@@ -60,7 +60,7 @@ def clear_report():
 
 
 # --------------------------------------------------------------------------------------
-# Unit Tests: Artist
+# Unit Tests
 # --------------------------------------------------------------------------------------
 def test_artist_initialization(mock_client: MagicMock) -> None:
     artist = Artist(client=mock_client)
@@ -231,11 +231,9 @@ def test_do_follow_success_and_fail(mock_client: MagicMock) -> None:
     mock_client.post.return_value = mock_resp
 
     with patch.object(artist.base, "part_hash", return_value="dummy_hash"):
-        # Success
         artist._do_follow("artist:testid", action="addToLibrary")
         artist._do_follow("artist:testid", action="removeFromLibrary")
 
-    # Fail branch
     mock_resp.fail = True
     mock_resp.error.string = "error"
     with patch.object(artist.base, "part_hash", return_value="dummy_hash"):

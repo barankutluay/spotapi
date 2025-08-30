@@ -3,7 +3,7 @@
 | Metric | Value |
 |--------|-------|
 | Version | 18 |
-| TOTP | 975272 |
+| TOTP | 255137 |
 
 ### TOTP Secret Fetch
 
