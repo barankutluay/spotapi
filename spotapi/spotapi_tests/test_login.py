@@ -15,7 +15,7 @@ from login import Login, LoginChallenge, LoginError
 # Rich Console & Markdown Report
 # --------------------------------------------------------------------------------------
 console: Console = Console(record=True)
-REPORT_PATH: Path = Path(f"./spotapi_tests/reports_{Path(__file__).stem}.md")
+REPORT_PATH: Path = Path(f"./spotapi_tests/reports/reports_{Path(__file__).stem}.md")
 REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 

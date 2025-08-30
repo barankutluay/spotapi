@@ -1,4 +1,3 @@
-import json
 import re
 from pathlib import Path
 from typing import Any, Dict, Generator
@@ -14,7 +13,7 @@ from artist import Artist, ArtistError
 # Rich Console & Markdown Report
 # --------------------------------------------------------------------------------------
 console: Console = Console(record=True)
-REPORT_PATH: Path = Path(f"./spotapi_tests/reports_{Path(__file__).stem}.md")
+REPORT_PATH: Path = Path(f"./spotapi_tests/reports/reports_{Path(__file__).stem}.md")
 REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
